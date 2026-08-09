@@ -42,6 +42,20 @@ export function createGatewayServer(): GatewayServerBundle {
     return reply.send(auditData);
   });
 
+  server.get('/test-escalate', async (req, reply) => {
+    const patientId = (req.query as { patientId?: string })?.patientId || 'patient-01';
+    const fakeEscalation = {
+      id: `esc-demo-${Date.now()}`,
+      callId: 'call-demo-101',
+      patientId,
+      reason: "Patient's description matches a known high-risk pattern: 'Sudden chest tightness or heavy sternal pressure'",
+      timestamp: new Date().toISOString(),
+      acknowledged: false,
+    };
+    socketManager.emitEscalationNew(fakeEscalation);
+    return reply.send({ success: true, escalation: fakeEscalation });
+  });
+
   // Attach Socket.io to Fastify HTTP server
   const socketManager = new GatewaySocketManager(server.server);
 

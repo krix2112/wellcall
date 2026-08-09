@@ -5,49 +5,148 @@ import { Escalation } from '@wellcall/shared-types';
 import { onEscalationNew } from '../lib/apiClient';
 
 export interface RiskFlagBannerProps {
-  initialEscalation?: Escalation | null;
+  patientId?: string;
+  initialEscalations?: Escalation[];
 }
 
-export const RiskFlagBanner: React.FC<RiskFlagBannerProps> = ({ initialEscalation = null }) => {
-  const [activeEscalation, setActiveEscalation] = useState<Escalation | null>(initialEscalation);
+export const RiskFlagBanner: React.FC<RiskFlagBannerProps> = ({
+  patientId,
+  initialEscalations = [],
+}) => {
+  const [escalations, setEscalations] = useState<Escalation[]>(initialEscalations);
 
   useEffect(() => {
-    const unsubscribe = onEscalationNew((escalation: Escalation) => {
-      setActiveEscalation(escalation);
+    const unsubscribe = onEscalationNew((newEscalation: Escalation) => {
+      console.log('[RiskFlagBanner] Received escalation:new event:', newEscalation);
+
+      // Filter by patientId if specified
+      if (patientId && newEscalation.patientId !== patientId) {
+        return;
+      }
+
+      setEscalations((prev) => {
+        // Prevent duplicates by ID
+        if (prev.some((e) => e.id === newEscalation.id)) {
+          return prev;
+        }
+        return [newEscalation, ...prev];
+      });
     });
 
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [patientId]);
 
-  if (!activeEscalation) return null;
+  const handleAcknowledge = (id: string) => {
+    setEscalations((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, acknowledged: true } : item))
+    );
+  };
+
+  if (escalations.length === 0) {
+    return null;
+  }
 
   return (
-    <div className="w-full p-4 rounded-xl shadow-lg border border-rose-600 bg-rose-950/90 text-rose-100 animate-pulse transition-all">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <div className="text-2xl mt-0.5">🚨</div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="font-bold text-lg">
-                NURSE ESCALATION REQUIRED (Call: {activeEscalation.callId})
-              </h3>
-            </div>
-            <p className="mt-1 text-sm opacity-90">{activeEscalation.reason}</p>
-            <span className="text-xs opacity-60 mt-1 block">
-              Triggered: {new Date(activeEscalation.timestamp).toLocaleString()}
-            </span>
-          </div>
-        </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', marginBottom: '20px' }}>
+      {escalations.map((item) => {
+        const isAck = item.acknowledged;
 
-        <button
-          onClick={() => setActiveEscalation(null)}
-          className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold px-3 py-1.5 rounded transition-colors"
-        >
-          Acknowledge
-        </button>
-      </div>
+        return (
+          <div
+            key={item.id}
+            style={{
+              width: '100%',
+              padding: '16px 20px',
+              borderRadius: '12px',
+              backgroundColor: isAck ? 'rgba(15, 23, 42, 0.95)' : 'rgba(136, 19, 55, 0.95)',
+              border: isAck ? '1px solid #334155' : '2px solid #e11d48',
+              boxShadow: isAck
+                ? 'none'
+                : '0 0 25px rgba(225, 29, 72, 0.35), 0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+              color: '#fff',
+              transition: 'all 0.3s ease-in-out',
+              fontFamily: 'sans-serif',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+                <div
+                  style={{
+                    fontSize: '24px',
+                    lineHeight: '1',
+                    animation: isAck ? 'none' : 'pulse 1.5s infinite ease-in-out',
+                  }}
+                >
+                  {isAck ? '✓' : '🚨'}
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span
+                      style={{
+                        fontWeight: 'bold',
+                        fontSize: '15px',
+                        letterSpacing: '0.5px',
+                        color: isAck ? '#94a3b8' : '#fecdd3',
+                      }}
+                    >
+                      {isAck ? 'NURSE ESCALATION ACKNOWLEDGED' : 'HIGH-RISK ESCALATION TRIGGERED'}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        backgroundColor: isAck ? '#1e293b' : '#9f1239',
+                        color: isAck ? '#cbd5e1' : '#ffe4e6',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        border: isAck ? '1px solid #475569' : '1px solid #f43f5e',
+                      }}
+                    >
+                      Call: {item.callId}
+                    </span>
+                  </div>
+
+                  <p
+                    style={{
+                      margin: '8px 0 6px 0',
+                      fontSize: '14px',
+                      color: isAck ? '#cbd5e1' : '#ffffff',
+                      fontWeight: 500,
+                      lineHeight: '1.4',
+                    }}
+                  >
+                    {item.reason}
+                  </p>
+
+                  <div style={{ fontSize: '11px', color: isAck ? '#64748b' : '#fda4af' }}>
+                    Escalated at: {new Date(item.timestamp).toLocaleString()} | Patient: {item.patientId}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => handleAcknowledge(item.id)}
+                disabled={isAck}
+                style={{
+                  backgroundColor: isAck ? '#1e293b' : '#e11d48',
+                  color: isAck ? '#94a3b8' : '#ffffff',
+                  border: isAck ? '1px solid #334155' : '1px solid #f43f5e',
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  cursor: isAck ? 'default' : 'pointer',
+                  whiteSpace: 'nowrap',
+                  transition: 'background-color 0.2s ease',
+                }}
+              >
+                {isAck ? '✓ Acknowledged' : 'Acknowledge'}
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 };
