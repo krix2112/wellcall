@@ -6,9 +6,9 @@ const QDRANT_API_KEY = process.env.QDRANT_API_KEY || undefined;
 export const qdrantClient = new QdrantClient({
   url: QDRANT_URL,
   apiKey: QDRANT_API_KEY,
+  checkCompatibility: false,
 });
 
-// In-Memory Vector Point Store (Dev Fallback when local Qdrant server is unreachable)
 export interface StoredVectorPoint {
   id: string | number;
   vector: number[];
@@ -46,7 +46,8 @@ export async function ensureCollection(
     }
   } catch (err) {
     console.warn(
-      `[qdrantClient] Qdrant server unreachable at ${QDRANT_URL}. Initializing in-memory fallback store for collection "${collectionName}".`
+      `[qdrantClient] Qdrant server unreachable at ${QDRANT_URL}. Initializing fallback store for collection "${collectionName}".`,
+      err
     );
     if (!fallbackPointStore.has(collectionName)) {
       fallbackPointStore.set(collectionName, []);
