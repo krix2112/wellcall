@@ -1,56 +1,68 @@
-# Wellcall Gateway API Contract
+# Wellcall API Contract
 
-The Next.js dashboard talks **ONLY** to the Fastify + Socket.io Gateway running in `services/voice-pipeline`.
-
-## REST API Endpoints
-
-| Method | Route | Description | Response Payload |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/patients` | Fetch active patient roster | `{ data: Patient[] }` |
-| `GET` | `/patients/:id` | Fetch single patient care plan | `{ data: Patient }` |
-| `GET` | `/calls/:id` | Fetch call session details & transcripts | `{ data: { call: CallSession, transcripts: TranscriptEntry[] } }` |
-| `GET` | `/audit` | Fetch nurse escalation audit table | `{ data: Escalation[] }` |
+This document outlines the API specification between the Fastify / Socket.io gateway (`services/voice-pipeline`) and the Next.js frontend dashboard (`apps/dashboard`). All payload shapes strictly reference `@wellcall/shared-types`.
 
 ---
 
-## Socket.io Live Event Contract
+## 1. REST API Endpoints
+
+### `GET /patients`
+Retrieves the list of active discharged patients.
+- **Response Shape**: `Patient[]`
+
+### `GET /patients/:id`
+Retrieves single patient details, care plan, and red flags by ID.
+- **Parameters**: `id` (string - Patient ID)
+- **Response Shape**: `Patient`
+
+### `GET /calls/:id`
+Retrieves details and transcript history for a specific call session.
+- **Parameters**: `id` (string - CallSession ID)
+- **Response Shape**: `{ call: CallSession, transcripts: TranscriptEntry[] }`
+
+### `GET /audit`
+Retrieves table of all recorded call sessions, decisions, and escalations.
+- **Response Shape**: `{ escalations: Escalation[], calls: CallSession[] }`
+
+---
+
+## 2. WebSocket Events (Socket.io)
 
 ### Server to Client Events (`ServerToClientEvents`)
 
 #### `transcript:new`
-Broadcasted whenever a new audio transcript entry is generated.
-```json
-{
-  "id": "tr-101",
-  "callId": "call-20260809-01",
-  "patientId": "patient-02",
-  "timestamp": "2026-08-09T15:30:00.000Z",
-  "speaker": "patient",
-  "text": "My chest feels tight when I take deep breaths.",
-  "isFinal": true
-}
-```
+Emitted in real-time as dialogue chunks are processed.
+- **Payload Shape**: `TranscriptEntry`
+  ```json
+  {
+    "id": "tr-101",
+    "callId": "call-501",
+    "speaker": "patient",
+    "text": "My chest feels tight when breathing deeply.",
+    "timestamp": "2026-08-09T23:30:00.000Z"
+  }
+  ```
 
 #### `escalation:new`
-Broadcasted when a red-flag condition triggers an immediate nurse escalation.
-```json
-{
-  "id": "esc-201",
-  "callId": "call-20260809-01",
-  "patientId": "patient-02",
-  "patientName": "Jane Smith",
-  "timestamp": "2026-08-09T15:30:05.000Z",
-  "riskTier": "critical",
-  "reason": "Patient reported chest tightness matching post-CABG cardiac red flag.",
-  "status": "pending"
-}
-```
+Emitted when a call triggers a clinical escalation.
+- **Payload Shape**: `Escalation`
+  ```json
+  {
+    "id": "esc-201",
+    "callId": "call-501",
+    "patientId": "patient-02",
+    "reason": "Symptom matched post-CABG cardiac red-flag.",
+    "timestamp": "2026-08-09T23:30:05.000Z",
+    "acknowledged": false
+  }
+  ```
 
 #### `call:status`
-Broadcasted when a call transitions state (`idle` -> `ringing` -> `connected` -> `ended`).
-```json
-{
-  "callId": "call-20260809-01",
-  "status": "connected"
-}
-```
+Emitted when a call session state changes.
+- **Payload Shape**: `{ callId: string; status: 'idle' | 'ringing' | 'connected' | 'ended' }`
+  ```json
+  {
+    "callId": "call-501",
+    "status": "connected"
+  }
+  ```

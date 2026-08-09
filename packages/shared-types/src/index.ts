@@ -1,121 +1,73 @@
 /**
  * @wellcall/shared-types
- * Primary API Contract for Wellcall Monorepo
- * Shared across Fastify/Socket.io gateway, orchestrator, logic packages, and Next.js dashboard.
+ * Core TypeScript Interfaces for Wellcall Monorepo
  */
-
-// ==========================================
-// 1. Patient & Care Plan Schemas
-// ==========================================
 
 export interface Medication {
   name: string;
   dosage: string;
   frequency: string;
-  purpose: string;
-}
-
-export interface RedFlagDefinition {
-  id: string;
-  category: string;
-  description: string;
-  severity: RiskTier;
-  exampleUtterances: string[];
-}
-
-export interface EmergencyContact {
-  name: string;
-  relationship: string;
-  phone: string;
+  purpose?: string;
 }
 
 export interface Patient {
   id: string;
   name: string;
   condition: string;
-  dischargeDate: string;
-  followUpDate: string;
   medications: Medication[];
-  redFlags: RedFlagDefinition[];
-  emergencyContacts: EmergencyContact[];
-  specialInstructions?: string[];
+  followUpDate: string;
+  redFlagSymptoms: string[];
 }
-
-// ==========================================
-// 2. Call Session & Telephony Types
-// ==========================================
-
-export type CallStatus = 'idle' | 'ringing' | 'connected' | 'ended';
 
 export interface CallSession {
   id: string;
   patientId: string;
-  status: CallStatus;
-  startTime: string;
-  endTime?: string;
-  durationSeconds?: number;
+  status: 'idle' | 'ringing' | 'connected' | 'ended';
+  startedAt: string;
+  endedAt?: string;
 }
 
 export interface TranscriptEntry {
   id: string;
   callId: string;
-  patientId: string;
-  timestamp: string;
-  speaker: 'agent' | 'patient';
+  speaker: 'patient' | 'system';
   text: string;
-  isFinal: boolean;
+  timestamp: string;
 }
-
-// ==========================================
-// 3. Clinical Intelligence Schemas
-// ==========================================
-
-export type RiskTier = 'low' | 'moderate' | 'high' | 'critical';
-
-export type SymptomSeverity = 'mild' | 'moderate' | 'severe';
 
 export interface ExtractedFields {
   symptom: string;
-  severity: SymptomSeverity;
+  severity: string;
   mood: string;
-  med_adherence: boolean;
-  notes?: string;
+  medAdherence: boolean;
 }
 
 export interface RedFlagMatch {
   matched: boolean;
+  riskTier: 'low' | 'medium' | 'high';
   matchedFlag?: string;
-  riskTier: RiskTier;
-  confidence: number;
-  explanation: string;
+  reason?: string;
 }
 
 export interface RiskDecision {
-  action: 'routine_log' | 'escalate';
-  riskTier: RiskTier;
+  action: 'log' | 'escalate';
   reason: string;
-  timestamp: string;
 }
 
 export interface Escalation {
   id: string;
   callId: string;
   patientId: string;
-  patientName: string;
-  timestamp: string;
-  riskTier: RiskTier;
   reason: string;
-  status: 'pending' | 'acknowledged' | 'resolved';
+  timestamp: string;
+  acknowledged: boolean;
 }
 
-// ==========================================
-// 4. Gateway Socket.io Event Contract
-// ==========================================
-
+// Socket Event Payload References
 export interface ServerToClientEvents {
   'transcript:new': (entry: TranscriptEntry) => void;
   'escalation:new': (escalation: Escalation) => void;
-  'call:status': (payload: { callId: string; status: CallStatus }) => void;
+  'call:status': (payload: { callId: string; status: CallSession['status'] }) => void;
 }
 
 export interface ClientToServerEvents {
