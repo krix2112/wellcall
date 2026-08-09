@@ -1,37 +1,36 @@
 import { FastifyInstance } from 'fastify';
-import { db } from './db';
+import { getPatients, getPatientById, getCallById, getAllAudit } from './db';
 
 export async function registerGatewayRoutes(server: FastifyInstance): Promise<void> {
-  // GET /patients - Roster of active patients
+  // GET /patients - Active patient roster
   server.get('/patients', async (request, reply) => {
-    const patients = await db.getPatients();
-    return reply.send({ data: patients });
+    const patients = await getPatients();
+    return reply.send(patients);
   });
 
-  // GET /patients/:id - Single patient care plan and details
+  // GET /patients/:id - Single patient details
   server.get('/patients/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const patient = await db.getPatientById(id);
+    const patient = await getPatientById(id);
     if (!patient) {
       return reply.status(404).send({ error: 'Patient not found' });
     }
-    return reply.send({ data: patient });
+    return reply.send(patient);
   });
 
-  // GET /calls/:id - Single call session details and transcripts
+  // GET /calls/:id - Single call session details
   server.get('/calls/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const call = await db.getCallById(id);
-    if (!call) {
+    const callData = await getCallById(id);
+    if (!callData) {
       return reply.status(404).send({ error: 'Call session not found' });
     }
-    const transcripts = await db.getTranscriptsByCallId(id);
-    return reply.send({ data: { call, transcripts } });
+    return reply.send(callData);
   });
 
   // GET /audit - Escalation audit report table
   server.get('/audit', async (request, reply) => {
-    const escalations = await db.getEscalations();
-    return reply.send({ data: escalations });
+    const auditData = await getAllAudit();
+    return reply.send(auditData);
   });
 }

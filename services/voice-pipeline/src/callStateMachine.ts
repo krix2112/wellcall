@@ -29,36 +29,21 @@ export class CallStateMachine {
     return { ...this.context };
   }
 
-  /**
-   * Start ringing patient
-   */
   public ring(): CallStatus {
     this.context.status = 'ringing';
-    console.log(`[callStateMachine] Call ${this.context.callId} status -> ringing`);
     return this.context.status;
   }
 
-  /**
-   * Connect call session
-   */
   public connect(): CallStatus {
     this.context.status = 'connected';
-    console.log(`[callStateMachine] Call ${this.context.callId} status -> connected`);
     return this.context.status;
   }
 
-  /**
-   * Hang up / end call session
-   */
   public hangup(): CallStatus {
     this.context.status = 'ended';
-    console.log(`[callStateMachine] Call ${this.context.callId} status -> ended`);
     return this.context.status;
   }
 
-  /**
-   * Standalone Fake Mode Runner for Phase 1 testing without live audio stream
-   */
   public async runFakeDemoSession(
     onTranscript: (entry: TranscriptEntry) => void
   ): Promise<TranscriptEntry[]> {
@@ -67,7 +52,7 @@ export class CallStateMachine {
     this.connect();
 
     const fakeDialogues = [
-      { speaker: 'agent' as const, text: `Hello ${this.context.patient.name}, this is Wellcall checking in on your post-discharge recovery.` },
+      { speaker: 'system' as const, text: `Hello ${this.context.patient.name}, this is Wellcall checking in on your recovery.` },
       { speaker: 'patient' as const, text: `Hello. I woke up today and my chest feels tight when I take deep breaths.` },
     ];
 
@@ -76,11 +61,9 @@ export class CallStateMachine {
       const entry: TranscriptEntry = {
         id: `tr-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
         callId: this.context.callId,
-        patientId: this.context.patient.id,
         timestamp: new Date().toISOString(),
         speaker: d.speaker,
         text: d.text,
-        isFinal: true,
       };
       this.context.transcripts.push(entry);
       generated.push(entry);

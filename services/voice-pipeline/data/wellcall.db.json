@@ -1,0 +1,75 @@
+{
+  "patients": {
+    "patient-01": {
+      "id": "patient-01",
+      "name": "Jane Smith (Seeded Demo)",
+      "condition": "Post-Coronary Artery Bypass Graft (CABG)",
+      "medications": [
+        {
+          "name": "Aspirin",
+          "dosage": "81mg",
+          "frequency": "Once daily",
+          "purpose": "Antiplatelet"
+        },
+        {
+          "name": "Atorvastatin",
+          "dosage": "40mg",
+          "frequency": "At bedtime",
+          "purpose": "Lipid control"
+        }
+      ],
+      "followUpDate": "2026-08-15",
+      "redFlagSymptoms": [
+        "Sudden chest tightness or heavy sternal pressure",
+        "Shortness of breath while resting",
+        "Rapid weight gain over 3 lbs in 24 hours"
+      ]
+    }
+  },
+  "calls": {},
+  "transcripts": [
+    {
+      "id": "tr-fake-1786299096121-1",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-09T18:11:36.121Z"
+    },
+    {
+      "id": "tr-fake-1786299101136-2",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-09T18:11:41.136Z"
+    },
+    {
+      "id": "tr-fake-1786299106144-3",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-09T18:11:46.144Z"
+    },
+    {
+      "id": "tr-fake-1786299111149-4",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-09T18:11:51.149Z"
+    },
+    {
+      "id": "tr-fake-1786299116153-5",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-09T18:11:56.153Z"
+    },
+    {
+      "id": "tr-fake-1786299121158-6",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-09T18:12:01.158Z"
+    }
+  ],
+  "escalations": []
+}

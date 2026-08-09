@@ -19,10 +19,12 @@ export interface Patient {
   redFlagSymptoms: string[];
 }
 
+export type CallStatus = 'idle' | 'ringing' | 'connected' | 'ended';
+
 export interface CallSession {
   id: string;
   patientId: string;
-  status: 'idle' | 'ringing' | 'connected' | 'ended';
+  status: CallStatus;
   startedAt: string;
   endedAt?: string;
 }
@@ -67,7 +69,7 @@ export interface Escalation {
 export interface ServerToClientEvents {
   'transcript:new': (entry: TranscriptEntry) => void;
   'escalation:new': (escalation: Escalation) => void;
-  'call:status': (payload: { callId: string; status: CallSession['status'] }) => void;
+  'call:status': (payload: { callId: string; status: CallStatus }) => void;
 }
 
 export interface ClientToServerEvents {
