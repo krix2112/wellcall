@@ -1,0 +1,21 @@
+{
+  "name": "wellcall-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Wellcall - Voice-First Post-Discharge Patient Check-in Agent (STARFORGE 2026 VoxForge Track)",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "id": "patient-02",
+  "name": "Jane Smith (SYNTHETIC)",
+  "condition": "Post-Coronary Artery Bypass Graft (CABG)",
+  "dischargeDate": "2026-08-01",
+  "followUpDate": "2026-08-15",
+  "medications": [
+    { "name": "Aspirin", "dosage": "81mg", "frequency": "Once daily", "purpose": "Antiplatelet" },
+    { "name": "Atorvastatin", "dosage": "40mg", "frequency": "At bedtime", "purpose": "Lipid control" }
+  ],
+  "redFlags": [
+    {
+      "id": "rf-cabg-01",
+      "category": "cardiac",
+      "description": "Sudden chest tightness, heavy pressure, or severe sternal pain",
+      "severity": "critical",
+      "exampleUtterances": ["chest feels tight", "heavy chest pressure", "chest is squeezing"]
+    },
+    {
+      "id": "rf-cabg-02",
+      "category": "respiratory",
+      "description": "Shortness of breath while resting",
+      "severity": "high",
+      "exampleUtterances": ["can barely breathe", "gasping for air", "shortness of breath while sitting"]
+    }
+  ],
+  "emergencyContacts": [
+    { "name": "Robert Smith", "relationship": "Spouse", "phone": "+1 (555) 019-2831" }
+  ]
+}
