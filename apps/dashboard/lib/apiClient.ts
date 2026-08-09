@@ -23,6 +23,21 @@ export async function getPatientById(id: string): Promise<Patient | null> {
   }
 }
 
+export type EnrichedCallSession = CallSession & {
+  outcome?: 'routine' | 'escalated';
+  escalationReason?: string;
+};
+
+export async function getCallsForPatient(patientId: string): Promise<EnrichedCallSession[]> {
+  try {
+    const res = await fetch(`${GATEWAY_URL}/patients/${patientId}/calls`);
+    if (!res.ok) return [];
+    return await res.json();
+  } catch {
+    return [];
+  }
+}
+
 export async function getCallById(id: string): Promise<{ call: CallSession; transcripts: TranscriptEntry[] } | null> {
   try {
     const res = await fetch(`${GATEWAY_URL}/calls/${id}`);

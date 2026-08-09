@@ -1,5 +1,5 @@
 import Fastify, { FastifyInstance } from 'fastify';
-import { getPatients, getPatientById, getCallById, getAllAudit } from './db';
+import { getPatients, getPatientById, getCallById, getAllAudit, getCallsByPatientId } from './db';
 import { GatewaySocketManager } from './socket';
 
 export interface GatewayServerBundle {
@@ -26,6 +26,24 @@ export function createGatewayServer(): GatewayServerBundle {
       return reply.status(404).send({ error: 'Patient not found' });
     }
     return reply.send(patient);
+  });
+
+  server.get('/patients/:id/calls', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const calls = await getCallsByPatientId(id);
+    const auditData = await getAllAudit();
+
+    // Enrich calls with outcome (escalated vs routine)
+    const enrichedCalls = calls.map((call: any) => {
+      const escalation = auditData.escalations.find((e) => e.callId === call.id);
+      return {
+        ...call,
+        outcome: escalation ? 'escalated' : 'routine',
+        escalationReason: escalation?.reason,
+      };
+    });
+
+    return reply.send(enrichedCalls);
   });
 
   server.get('/calls/:id', async (req, reply) => {

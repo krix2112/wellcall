@@ -55,6 +55,9 @@ export class GatewayDatabase {
   /**
    * Seed ONE fake patient row on startup if patients table is empty
    */
+  /**
+   * Seed initial fake calls for patient-01 if calls table is empty
+   */
   public seedFakePatientIfEmpty(): void {
     if (Object.keys(this.data.patients).length === 0) {
       const seedPatient: Patient = {
@@ -73,9 +76,41 @@ export class GatewayDatabase {
         ],
       };
       this.data.patients[seedPatient.id] = seedPatient;
-      this.saveDb();
       console.log('[gateway/db] Seeded initial fake patient row: patient-01');
     }
+
+    if (Object.keys(this.data.calls).length === 0) {
+      const demoCall1: CallSession = {
+        id: 'call-demo-101',
+        patientId: 'patient-01',
+        status: 'ended',
+        startedAt: '2026-08-09T18:11:00.000Z',
+        endedAt: '2026-08-09T18:15:30.000Z',
+      };
+      const demoCall2: CallSession = {
+        id: 'call-demo-100',
+        patientId: 'patient-01',
+        status: 'ended',
+        startedAt: '2026-08-08T09:30:00.000Z',
+        endedAt: '2026-08-08T09:33:15.000Z',
+      };
+      this.data.calls[demoCall1.id] = demoCall1;
+      this.data.calls[demoCall2.id] = demoCall2;
+
+      // Seed routine memory/outcome for call-demo-100
+      this.data.escalations.push({
+        id: 'esc-demo-101',
+        callId: 'call-demo-101',
+        patientId: 'patient-01',
+        reason: "Patient's description matches a known high-risk pattern: 'Sudden chest tightness or heavy sternal pressure'",
+        timestamp: '2026-08-09T18:12:00.000Z',
+        acknowledged: false,
+      });
+
+      console.log('[gateway/db] Seeded demo call history for patient-01');
+    }
+
+    this.saveDb();
   }
 
   // --- Exported Typed Queries ---
@@ -100,6 +135,12 @@ export class GatewayDatabase {
 
   public async getCallById(id: string): Promise<CallSession | null> {
     return this.data.calls[id] || null;
+  }
+
+  public async getCallsByPatientId(patientId: string): Promise<CallSession[]> {
+    return Object.values(this.data.calls)
+      .filter((c) => c.patientId === patientId)
+      .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
   }
 
   public async insertTranscriptEntry(entry: TranscriptEntry): Promise<void> {
@@ -131,6 +172,7 @@ export const getPatients = db.getPatients.bind(db);
 export const getPatientById = db.getPatientById.bind(db);
 export const insertCall = db.insertCall.bind(db);
 export const getCallById = db.getCallById.bind(db);
+export const getCallsByPatientId = db.getCallsByPatientId.bind(db);
 export const insertTranscriptEntry = db.insertTranscriptEntry.bind(db);
 export const insertEscalation = db.insertEscalation.bind(db);
 export const getAllAudit = db.getAllAudit.bind(db);

@@ -15,6 +15,11 @@ Retrieves single patient details, care plan, and red flags by ID.
 - **Parameters**: `id` (string - Patient ID)
 - **Response Shape**: `Patient`
 
+### `GET /patients/:id/calls`
+Retrieves list of all past call sessions for a patient, sorted most recent first.
+- **Parameters**: `id` (string - Patient ID)
+- **Response Shape**: `(CallSession & { outcome?: 'routine' | 'escalated'; escalationReason?: string })[]`
+
 ### `GET /calls/:id`
 Retrieves details and transcript history for a specific call session.
 - **Parameters**: `id` (string - CallSession ID)
