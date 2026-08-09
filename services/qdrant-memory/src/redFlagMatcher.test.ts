@@ -1,22 +1,66 @@
 import assert from 'node:assert';
-import { test } from 'node:test';
-import { matchRedFlags } from './redFlagMatcher';
+import { test, before } from 'node:test';
+import { matchRedFlag, SIMILARITY_THRESHOLD } from './redFlagMatcher';
+import { ensureCollection } from './qdrantClient';
+import { seedPatientCarePlan, RED_FLAGS_COLLECTION } from './carePlanStore';
+import { VECTOR_SIZE } from './embeddings';
+import { Patient } from '@wellcall/shared-types';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
-const sampleRedFlags = [
-  'Sudden chest tightness or severe pressure',
-  'Fever above 101F or shaking chills',
-];
-
-test('redFlagMatcher - POSITIVE MATCH: detects cardiac chest tightness as high risk', async () => {
-  const result = await matchRedFlags('My chest feels tight when breathing', sampleRedFlags);
-  
-  assert.strictEqual(result.matched, true);
-  assert.strictEqual(result.riskTier, 'high');
+before(async () => {
+  console.log('\n--- Seeding Qdrant vector memory before running test suite ---');
+  await ensureCollection(RED_FLAGS_COLLECTION, VECTOR_SIZE);
+  const dataDir = path.resolve(__dirname, '../../../data/synthetic-patients');
+  if (fs.existsSync(dataDir)) {
+    const files = fs.readdirSync(dataDir).filter((f) => f.endsWith('.json'));
+    for (const file of files) {
+      const content = fs.readFileSync(path.join(dataDir, file), 'utf-8');
+      const patient = JSON.parse(content) as Patient;
+      await seedPatientCarePlan(patient);
+    }
+  }
 });
 
-test('redFlagMatcher - NEGATIVE MATCH: handles benign recovery phrase safely', async () => {
-  const result = await matchRedFlags('I am feeling much better and taking my walks', sampleRedFlags);
-  
-  assert.strictEqual(result.matched, false);
+test('redFlagMatcher - TEST CASE A (POSITIVE MATCH): Chest tightness for patient-02 (Post-CABG)', async () => {
+  const patientId = 'patient-02';
+  const spokenText = 'my chest feels tight when I try to take deep breaths';
+
+  console.log(`\n--- Running Test Case A ---`);
+  const result = await matchRedFlag(patientId, spokenText);
+
+  assert.strictEqual(result.matched, true, 'Test A should match cardiac red flag');
+  assert.ok(result.matchedFlag?.toLowerCase().includes('chest'), 'Matched flag should mention chest');
+});
+
+test('redFlagMatcher - TEST CASE B (PARAPHRASED POSITIVE MATCH): Rapid weight gain for patient-03 (CHF)', async () => {
+  const patientId = 'patient-03';
+  const spokenText = 'I think I gained some weight really fast this week';
+
+  console.log(`\n--- Running Test Case B ---`);
+  const result = await matchRedFlag(patientId, spokenText);
+
+  assert.strictEqual(result.matched, true, 'Test B should match CHF fluid weight gain red flag');
+  assert.ok(result.matchedFlag?.toLowerCase().includes('weight'), 'Matched flag should mention weight gain');
+});
+
+test('redFlagMatcher - TEST CASE C (NEGATIVE CASE): Benign activity for patient-01', async () => {
+  const patientId = 'patient-01';
+  const spokenText = 'I watched a movie and had a sandwich for lunch';
+
+  console.log(`\n--- Running Test Case C ---`);
+  const result = await matchRedFlag(patientId, spokenText);
+
+  assert.strictEqual(result.matched, false, 'Test C should NOT match any red flag');
   assert.strictEqual(result.riskTier, 'low');
+});
+
+test('redFlagMatcher - TEST CASE D (CROSS-PATIENT ISOLATION): Patient-02 red flag queried with patient-01 ID', async () => {
+  const patientId = 'patient-01';
+  const spokenText = 'my chest feels tight when I try to take deep breaths';
+
+  console.log(`\n--- Running Test Case D (Cross-Patient Isolation) ---`);
+  const result = await matchRedFlag(patientId, spokenText);
+
+  assert.strictEqual(result.matched, false, 'Test D MUST NOT match because chest tightness is not patient-01 red flag');
 });
