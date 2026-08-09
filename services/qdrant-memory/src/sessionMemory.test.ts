@@ -96,7 +96,7 @@ test('sessionMemory - TEST 3: deleteMemory soft-deletes entry (deleted: true in 
 
 test('sessionMemory - TEST 4: getRelevantMemory semantic search retrieves relevant memory over recent unrelated ones', async () => {
   await ensureSessionMemoryCollection();
-  const patientId = 'patient-test-04';
+  const patientId = 'patient-test-04-scores';
 
   // Seed 2 unrelated memories + 1 semantically target memory
   const mem1 = await setMemory(patientId, 'call-201', 'Patient likes watching baseball games on weekend afternoons', 'general');
@@ -105,9 +105,9 @@ test('sessionMemory - TEST 4: getRelevantMemory semantic search retrieves releva
 
   // Query with a semantically related phrase: "my legs and feet are getting puffy"
   const currentContext = 'my legs and feet are getting puffy';
-  console.log(`\n--- Running Session Memory Test 4 (Semantic Memory Retrieval) ---`);
-  const relevantMemories = await getRelevantMemory(patientId, currentContext, 1);
+  console.log(`\n--- Running Session Memory Test 4 (Full Similarity Gap Analysis) ---`);
+  const relevantMemories = await getRelevantMemory(patientId, currentContext, 5);
 
-  assert.ok(relevantMemories.length > 0, 'Should return at least 1 relevant memory');
+  assert.ok(relevantMemories.length >= 3, 'Should return all 3 stored memories in candidate set');
   assert.strictEqual(relevantMemories[0].id, mem2.id, 'Top semantic match MUST be the ankle swelling memory (mem2)');
 });
