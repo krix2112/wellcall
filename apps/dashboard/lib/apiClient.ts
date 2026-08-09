@@ -1,7 +1,7 @@
 import { Patient, CallSession, TranscriptEntry, Escalation, ServerToClientEvents } from '@wellcall/shared-types';
 import { io, Socket } from 'socket.io-client';
 
-const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:4000';
+const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:3001';
 
 // REST Fetch Helpers
 export async function getPatients(): Promise<Patient[]> {

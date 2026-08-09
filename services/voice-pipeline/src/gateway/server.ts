@@ -46,7 +46,7 @@ export function createGatewayServer(): GatewayServerBundle {
   const socketManager = new GatewaySocketManager(server.server);
 
   const start = async (): Promise<string> => {
-    const port = Number(process.env.GATEWAY_PORT) || 4000;
+    const port = Number(process.env.GATEWAY_PORT) || 3001;
     const host = '0.0.0.0';
     const address = await server.listen({ port, host });
     console.log(`[gateway/server] Fastify + Socket.io running on ${address}`);
