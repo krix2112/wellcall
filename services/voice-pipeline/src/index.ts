@@ -1,10 +1,24 @@
-import { createGatewayServer } from './gateway/server';
+import { createGatewayServer, GatewayServerBundle } from './gateway/server';
 import { insertTranscriptEntry } from './gateway/db';
+import { GatewaySocketManager } from './gateway/socket';
 import { TranscriptEntry } from '@wellcall/shared-types';
 
+let gatewayBundle: GatewayServerBundle | null = null;
+
+/**
+ * Singleton getter to access the live GatewaySocketManager instance
+ * across all orchestrator pipeline modules (e.g. callStateMachine.ts).
+ */
+export function getSocketManager(): GatewaySocketManager {
+  if (!gatewayBundle || !gatewayBundle.socketManager) {
+    throw new Error('[orchestrator] GatewaySocketManager is not initialized yet. Call bootstrap() first.');
+  }
+  return gatewayBundle.socketManager;
+}
+
 async function bootstrap() {
-  const gateway = createGatewayServer();
-  await gateway.start();
+  gatewayBundle = createGatewayServer();
+  await gatewayBundle.start();
 
   console.log('[orchestrator] Gateway server started successfully.');
 
@@ -28,8 +42,8 @@ async function bootstrap() {
     // a) insert fake TranscriptEntry into DB via db.ts
     await insertTranscriptEntry(fakeEntry);
 
-    // b) emit over transcript:new via socket helper
-    gateway.socketManager.emitTranscriptNew(fakeEntry);
+    // b) emit over transcript:new via singleton socket helper
+    getSocketManager().emitTranscriptNew(fakeEntry);
   }, 5000);
 }
 
