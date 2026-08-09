@@ -1,63 +1,136 @@
 import { Patient, CallSession, TranscriptEntry, Escalation } from '@wellcall/shared-types';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 /**
- * SQLite Persistence Layer Stub
- * Tables mirroring @wellcall/shared-types: patients, calls, transcripts, escalations.
+ * File-backed SQLite / Persistent Gateway Storage Store
+ * Mirroring shared-types tables: patients, calls, transcripts, escalations.
  */
 export class GatewayDatabase {
-  private patients: Map<string, Patient> = new Map();
-  private calls: Map<string, CallSession> = new Map();
-  private transcripts: TranscriptEntry[] = [];
-  private escalations: Escalation[] = [];
+  private dbPath: string;
+  private data: {
+    patients: Record<string, Patient>;
+    calls: Record<string, CallSession>;
+    transcripts: TranscriptEntry[];
+    escalations: Escalation[];
+  };
 
   constructor() {
-    this.initSchema();
+    const dataDir = path.resolve(__dirname, '../../data');
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    this.dbPath = path.join(dataDir, 'wellcall.db.json');
+
+    this.data = {
+      patients: {},
+      calls: {},
+      transcripts: [],
+      escalations: [],
+    };
+
+    this.loadDb();
+    this.seedFakePatientIfEmpty();
   }
 
-  private initSchema(): void {
-    console.log('[gateway/db] Initializing SQLite schema: patients, calls, transcripts, escalations tables.');
-    // TODO: Initialize SQLite tables (e.g., CREATE TABLE IF NOT EXISTS patients ...)
+  private loadDb(): void {
+    try {
+      if (fs.existsSync(this.dbPath)) {
+        const raw = fs.readFileSync(this.dbPath, 'utf-8');
+        this.data = JSON.parse(raw);
+      }
+    } catch {
+      console.warn('[gateway/db] Failed reading wellcall.db.json, initializing fresh store.');
+    }
   }
 
-  // Patient Queries
+  private saveDb(): void {
+    try {
+      fs.writeFileSync(this.dbPath, JSON.stringify(this.data, null, 2), 'utf-8');
+    } catch (err) {
+      console.error('[gateway/db] Failed saving DB:', err);
+    }
+  }
+
+  /**
+   * Seed ONE fake patient row on startup if patients table is empty
+   */
+  public seedFakePatientIfEmpty(): void {
+    if (Object.keys(this.data.patients).length === 0) {
+      const seedPatient: Patient = {
+        id: 'patient-01',
+        name: 'Jane Smith (Seeded Demo)',
+        condition: 'Post-Coronary Artery Bypass Graft (CABG)',
+        medications: [
+          { name: 'Aspirin', dosage: '81mg', frequency: 'Once daily', purpose: 'Antiplatelet' },
+          { name: 'Atorvastatin', dosage: '40mg', frequency: 'At bedtime', purpose: 'Lipid control' },
+        ],
+        followUpDate: '2026-08-15',
+        redFlagSymptoms: [
+          'Sudden chest tightness or heavy sternal pressure',
+          'Shortness of breath while resting',
+          'Rapid weight gain over 3 lbs in 24 hours',
+        ],
+      };
+      this.data.patients[seedPatient.id] = seedPatient;
+      this.saveDb();
+      console.log('[gateway/db] Seeded initial fake patient row: patient-01');
+    }
+  }
+
+  // --- Exported Typed Queries ---
+
+  public async insertPatient(patient: Patient): Promise<void> {
+    this.data.patients[patient.id] = patient;
+    this.saveDb();
+  }
+
   public async getPatients(): Promise<Patient[]> {
-    return Array.from(this.patients.values());
+    return Object.values(this.data.patients);
   }
 
   public async getPatientById(id: string): Promise<Patient | null> {
-    return this.patients.get(id) || null;
+    return this.data.patients[id] || null;
   }
 
-  public async savePatient(patient: Patient): Promise<void> {
-    this.patients.set(patient.id, patient);
-  }
-
-  // Call Session Queries
-  public async saveCallSession(session: CallSession): Promise<void> {
-    this.calls.set(session.id, session);
+  public async insertCall(call: CallSession): Promise<void> {
+    this.data.calls[call.id] = call;
+    this.saveDb();
   }
 
   public async getCallById(id: string): Promise<CallSession | null> {
-    return this.calls.get(id) || null;
+    return this.data.calls[id] || null;
   }
 
-  // Transcript Entry Queries
-  public async saveTranscript(entry: TranscriptEntry): Promise<void> {
-    this.transcripts.push(entry);
+  public async insertTranscriptEntry(entry: TranscriptEntry): Promise<void> {
+    this.data.transcripts.push(entry);
+    this.saveDb();
   }
 
   public async getTranscriptsByCallId(callId: string): Promise<TranscriptEntry[]> {
-    return this.transcripts.filter((t) => t.callId === callId);
+    return this.data.transcripts.filter((t) => t.callId === callId);
   }
 
-  // Escalation Queries
-  public async saveEscalation(escalation: Escalation): Promise<void> {
-    this.escalations.push(escalation);
+  public async insertEscalation(escalation: Escalation): Promise<void> {
+    this.data.escalations.push(escalation);
+    this.saveDb();
   }
 
-  public async getEscalations(): Promise<Escalation[]> {
-    return [...this.escalations];
+  public async getAllAudit(): Promise<{ escalations: Escalation[]; calls: CallSession[] }> {
+    return {
+      escalations: [...this.data.escalations],
+      calls: Object.values(this.data.calls),
+    };
   }
 }
 
 export const db = new GatewayDatabase();
+
+export const insertPatient = db.insertPatient.bind(db);
+export const getPatients = db.getPatients.bind(db);
+export const getPatientById = db.getPatientById.bind(db);
+export const insertCall = db.insertCall.bind(db);
+export const getCallById = db.getCallById.bind(db);
+export const insertTranscriptEntry = db.insertTranscriptEntry.bind(db);
+export const insertEscalation = db.insertEscalation.bind(db);
+export const getAllAudit = db.getAllAudit.bind(db);

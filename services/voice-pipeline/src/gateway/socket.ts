@@ -1,6 +1,6 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { Server as HTTPServer } from 'node:http';
-import { TranscriptEntry, Escalation, CallStatus, ServerToClientEvents, ClientToServerEvents } from '@wellcall/shared-types';
+import { TranscriptEntry, Escalation, CallSession, ServerToClientEvents, ClientToServerEvents } from '@wellcall/shared-types';
 
 export class GatewaySocketManager {
   private io: SocketIOServer<ClientToServerEvents, ServerToClientEvents>;
@@ -13,40 +13,29 @@ export class GatewaySocketManager {
       },
     });
 
-    this.setupListeners();
-  }
-
-  private setupListeners(): void {
     this.io.on('connection', (socket) => {
-      console.log(`[socket.io] Client connected: ${socket.id}`);
+      console.log(`[gateway/socket] Client connected: ${socket.id}`);
 
       socket.on('disconnect', () => {
-        console.log(`[socket.io] Client disconnected: ${socket.id}`);
+        console.log(`[gateway/socket] Client disconnected: ${socket.id}`);
       });
     });
   }
 
-  /**
-   * Broadcast real-time transcript entry event
-   */
+  // --- Typed Socket Emit Helpers ---
+
   public emitTranscriptNew(entry: TranscriptEntry): void {
-    console.log(`[socket.io] Emitting transcript:new -> "${entry.text}"`);
+    console.log(`[gateway/socket] Emitting transcript:new -> "${entry.text}"`);
     this.io.emit('transcript:new', entry);
   }
 
-  /**
-   * Broadcast critical escalation event
-   */
   public emitEscalationNew(escalation: Escalation): void {
-    console.log(`[socket.io] Emitting escalation:new -> ${escalation.patientName} (${escalation.riskTier})`);
+    console.log(`[gateway/socket] Emitting escalation:new -> ${escalation.reason}`);
     this.io.emit('escalation:new', escalation);
   }
 
-  /**
-   * Broadcast call session status change
-   */
-  public emitCallStatus(callId: string, status: CallStatus): void {
-    console.log(`[socket.io] Emitting call:status -> ${callId}: ${status}`);
+  public emitCallStatus(callId: string, status: CallSession['status']): void {
+    console.log(`[gateway/socket] Emitting call:status -> ${callId}: ${status}`);
     this.io.emit('call:status', { callId, status });
   }
 }

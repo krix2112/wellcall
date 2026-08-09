@@ -5,6 +5,7 @@
   "description": "Wellcall - Voice-First Post-Discharge Patient Check-in Agent (STARFORGE 2026 VoxForge Track)",
   "scripts": {
     "dev": "turbo run dev",
+    "dev:gateway": "pnpm --filter @wellcall/voice-pipeline dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
