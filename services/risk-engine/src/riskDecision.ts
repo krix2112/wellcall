@@ -1,41 +1,58 @@
 import { ExtractedFields, RedFlagMatch, RiskDecision } from '@wellcall/shared-types';
 
-export interface DecideRiskInput {
-  extraction: ExtractedFields;
-  redFlagMatch: RedFlagMatch;
-}
-
 /**
- * Pure function: Combines extracted patient symptom data and red-flag semantic match
- * to determine routine log vs immediate nurse escalation with rationale.
- * NO SERVER CODE HERE.
+ * Pure Deterministic Risk Decision Engine
+ * Combines Claude symptom extraction outputs and Qdrant semantic vector red-flag matches
+ * into a single defensible clinical action with a human-readable, spoken-appropriate reason.
  */
-export async function decideRisk(input: DecideRiskInput): Promise<RiskDecision> {
-  const timestamp = new Date().toISOString();
-  const { extraction, redFlagMatch } = input;
-
-  if (redFlagMatch.matched && (redFlagMatch.riskTier === 'high' || redFlagMatch.riskTier === 'critical')) {
+export function decideRisk(
+  extracted: ExtractedFields,
+  redFlagMatch: RedFlagMatch
+): RiskDecision {
+  // Rule A: High-Risk Red Flag Semantic Match
+  if (redFlagMatch.matched && redFlagMatch.riskTier === 'high') {
     return {
       action: 'escalate',
-      riskTier: redFlagMatch.riskTier,
-      reason: `Patient reported symptom "${extraction.symptom}" matching red flag: ${redFlagMatch.explanation}`,
-      timestamp,
+      reason: `Patient's description matches a known high-risk pattern: "${redFlagMatch.matchedFlag || 'High Risk Red Flag'}"`,
     };
   }
 
-  if (!extraction.med_adherence && extraction.severity === 'severe') {
+  // Rule B: Severe Symptom Reported
+  if (extracted.severity === 'severe') {
+    const symptomName = extracted.symptom || 'unspecified symptom';
     return {
       action: 'escalate',
-      riskTier: 'high',
-      reason: 'Patient reported severe symptoms alongside medication non-adherence.',
-      timestamp,
+      reason: `Patient reported severe symptom severity: "${symptomName}"`,
     };
   }
 
+  // Rule C: Medium-Risk Red Flag + Moderate Symptom Severity
+  if (
+    redFlagMatch.matched &&
+    redFlagMatch.riskTier === 'medium' &&
+    extracted.severity === 'moderate'
+  ) {
+    return {
+      action: 'escalate',
+      reason: `Patient matched a medium-risk red flag ("${redFlagMatch.matchedFlag}") while experiencing moderate symptom severity.`,
+    };
+  }
+
+  // Rule D: Medication Non-Adherence with Active Symptoms
+  if (
+    extracted.medAdherence === 'no' &&
+    extracted.severity !== null &&
+    extracted.severity !== 'none'
+  ) {
+    return {
+      action: 'escalate',
+      reason: 'Patient reports skipping medication while experiencing symptoms',
+    };
+  }
+
+  // Rule E: Routine Check-in (No Risk Indicators Detected)
   return {
-    action: 'routine_log',
-    riskTier: redFlagMatch.riskTier || 'low',
-    reason: 'Routine post-discharge recovery check-in recorded. No high-risk red flags triggered.',
-    timestamp,
+    action: 'log',
+    reason: 'Routine check-in, no risk indicators detected',
   };
 }
