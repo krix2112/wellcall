@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "turbo run dev",
     "dev:gateway": "pnpm --filter @wellcall/voice-pipeline dev",
+    "dev:dashboard": "pnpm --filter @wellcall/dashboard dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",

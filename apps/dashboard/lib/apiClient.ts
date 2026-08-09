@@ -1,64 +1,82 @@
 import { Patient, CallSession, TranscriptEntry, Escalation, ServerToClientEvents } from '@wellcall/shared-types';
 import { io, Socket } from 'socket.io-client';
 
-export class GatewayApiClient {
-  private baseUrl: string;
-  private socket: Socket<ServerToClientEvents> | null = null;
+const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:4000';
 
-  constructor(baseUrl?: string) {
-    this.baseUrl = baseUrl || process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:3001';
-  }
-
-  // REST API Client Wrappers
-  public async getPatients(): Promise<Patient[]> {
-    try {
-      const res = await fetch(`${this.baseUrl}/patients`);
-      const json = await res.json();
-      return json.data || [];
-    } catch {
-      return [];
-    }
-  }
-
-  public async getPatientById(id: string): Promise<Patient | null> {
-    try {
-      const res = await fetch(`${this.baseUrl}/patients/${id}`);
-      const json = await res.json();
-      return json.data || null;
-    } catch {
-      return null;
-    }
-  }
-
-  public async getCallById(id: string): Promise<{ call: CallSession; transcripts: TranscriptEntry[] } | null> {
-    try {
-      const res = await fetch(`${this.baseUrl}/calls/${id}`);
-      const json = await res.json();
-      return json.data || null;
-    } catch {
-      return null;
-    }
-  }
-
-  public async getAuditEscalations(): Promise<Escalation[]> {
-    try {
-      const res = await fetch(`${this.baseUrl}/audit`);
-      const json = await res.json();
-      return json.data || [];
-    } catch {
-      return [];
-    }
-  }
-
-  // Typed Socket.io Client Connection
-  public getSocket(): Socket<ServerToClientEvents> {
-    if (!this.socket) {
-      this.socket = io(this.baseUrl, {
-        autoConnect: true,
-      });
-    }
-    return this.socket;
+// REST Fetch Helpers
+export async function getPatients(): Promise<Patient[]> {
+  try {
+    const res = await fetch(`${GATEWAY_URL}/patients`);
+    return await res.json();
+  } catch {
+    return [];
   }
 }
 
-export const apiClient = new GatewayApiClient();
+export async function getPatientById(id: string): Promise<Patient | null> {
+  try {
+    const res = await fetch(`${GATEWAY_URL}/patients/${id}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function getCallById(id: string): Promise<{ call: CallSession; transcripts: TranscriptEntry[] } | null> {
+  try {
+    const res = await fetch(`${GATEWAY_URL}/calls/${id}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function getAudit(): Promise<{ escalations: Escalation[]; calls: CallSession[] }> {
+  try {
+    const res = await fetch(`${GATEWAY_URL}/audit`);
+    return await res.json();
+  } catch {
+    return { escalations: [], calls: [] };
+  }
+}
+
+// Socket.io Singleton Connection
+let socket: Socket<ServerToClientEvents> | null = null;
+
+function getSocket(): Socket<ServerToClientEvents> {
+  if (!socket) {
+    socket = io(GATEWAY_URL, {
+      autoConnect: true,
+    });
+  }
+  return socket;
+}
+
+// Typed Subscribe Helpers
+export function onTranscriptNew(callback: (entry: TranscriptEntry) => void): () => void {
+  const s = getSocket();
+  s.on('transcript:new', callback);
+  return () => {
+    s.off('transcript:new', callback);
+  };
+}
+
+export function onEscalationNew(callback: (escalation: Escalation) => void): () => void {
+  const s = getSocket();
+  s.on('escalation:new', callback);
+  return () => {
+    s.off('escalation:new', callback);
+  };
+}
+
+export function onCallStatus(
+  callback: (payload: { callId: string; status: CallSession['status'] }) => void
+): () => void {
+  const s = getSocket();
+  s.on('call:status', callback);
+  return () => {
+    s.off('call:status', callback);
+  };
+}

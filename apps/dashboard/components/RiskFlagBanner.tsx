@@ -1,6 +1,8 @@
+'use client';
+
 import React, { useEffect, useState } from 'react';
 import { Escalation } from '@wellcall/shared-types';
-import { apiClient } from '../lib/apiClient';
+import { onEscalationNew } from '../lib/apiClient';
 
 export interface RiskFlagBannerProps {
   initialEscalation?: Escalation | null;
@@ -10,16 +12,12 @@ export const RiskFlagBanner: React.FC<RiskFlagBannerProps> = ({ initialEscalatio
   const [activeEscalation, setActiveEscalation] = useState<Escalation | null>(initialEscalation);
 
   useEffect(() => {
-    const socket = apiClient.getSocket();
-
-    const handleNewEscalation = (escalation: Escalation) => {
+    const unsubscribe = onEscalationNew((escalation: Escalation) => {
       setActiveEscalation(escalation);
-    };
-
-    socket.on('escalation:new', handleNewEscalation);
+    });
 
     return () => {
-      socket.off('escalation:new', handleNewEscalation);
+      unsubscribe();
     };
   }, []);
 
@@ -33,11 +31,8 @@ export const RiskFlagBanner: React.FC<RiskFlagBannerProps> = ({ initialEscalatio
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-bold text-lg">
-                NURSE ESCALATION REQUIRED: {activeEscalation.patientName}
+                NURSE ESCALATION REQUIRED (Call: {activeEscalation.callId})
               </h3>
-              <span className="px-2 py-0.5 rounded text-xs uppercase font-extrabold bg-rose-600 text-white">
-                {activeEscalation.riskTier} RISK
-              </span>
             </div>
             <p className="mt-1 text-sm opacity-90">{activeEscalation.reason}</p>
             <span className="text-xs opacity-60 mt-1 block">

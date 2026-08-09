@@ -18,15 +18,9 @@ export const CarePlanCard: React.FC<CarePlanCardProps> = ({ patient }) => {
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 text-xs">
-        <div>
-          <span className="text-slate-400 block">Discharge Date</span>
-          <span className="font-semibold">{patient.dischargeDate}</span>
-        </div>
-        <div>
-          <span className="text-slate-400 block">Follow-up Date</span>
-          <span className="font-semibold text-emerald-400">{patient.followUpDate}</span>
-        </div>
+      <div className="text-xs">
+        <span className="text-slate-400 block">Follow-up Date</span>
+        <span className="font-semibold text-emerald-400">{patient.followUpDate}</span>
       </div>
 
       <div>
@@ -45,16 +39,12 @@ export const CarePlanCard: React.FC<CarePlanCardProps> = ({ patient }) => {
 
       <div>
         <h4 className="text-xs font-semibold text-rose-400 uppercase tracking-wider mb-2">
-          Red-Flag Triggers ({patient.redFlags.length})
+          Red-Flag Triggers ({patient.redFlagSymptoms.length})
         </h4>
         <div className="space-y-1.5 text-xs">
-          {patient.redFlags.map((flag) => (
-            <div key={flag.id} className="bg-rose-950/30 border border-rose-800/40 p-2 rounded text-rose-200">
-              <div className="font-bold flex justify-between">
-                <span>{flag.category.toUpperCase()}</span>
-                <span className="uppercase text-[10px] bg-rose-900 px-1.5 py-0.5 rounded">{flag.severity}</span>
-              </div>
-              <p className="text-[11px] opacity-90 mt-0.5">{flag.description}</p>
+          {patient.redFlagSymptoms.map((symptom, idx) => (
+            <div key={idx} className="bg-rose-950/30 border border-rose-800/40 p-2 rounded text-rose-200">
+              <p className="text-[11px] opacity-90">{symptom}</p>
             </div>
           ))}
         </div>
