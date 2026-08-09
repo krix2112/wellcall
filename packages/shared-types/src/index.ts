@@ -76,6 +76,19 @@ export interface MemoryEntry {
   deleted?: boolean;
 }
 
+export interface AuditRecord {
+  callId: string;
+  patientId: string;
+  patientName: string;
+  patientCondition: string;
+  callTimestamp: string;
+  transcript: TranscriptEntry[];
+  extractedFields: ExtractedFields[];
+  redFlagMatches: RedFlagMatch[];
+  finalDecision: RiskDecision;
+  escalation?: Escalation;
+}
+
 // Socket Event Payload References
 export interface ServerToClientEvents {
   'transcript:new': (entry: TranscriptEntry) => void;
