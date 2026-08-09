@@ -65,6 +65,17 @@ export interface Escalation {
   acknowledged: boolean;
 }
 
+export interface MemoryEntry {
+  id: string;
+  patientId: string;
+  callId: string;
+  summaryText: string;
+  category: 'symptom' | 'mood' | 'med_adherence' | 'general';
+  createdAt: string;
+  correctedAt?: string;
+  deleted?: boolean;
+}
+
 // Socket Event Payload References
 export interface ServerToClientEvents {
   'transcript:new': (entry: TranscriptEntry) => void;

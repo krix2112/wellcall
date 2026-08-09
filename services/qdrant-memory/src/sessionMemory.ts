@@ -1,69 +1,306 @@
-export interface MemoryItem {
-  id: string;
-  patientId: string;
-  key: string;
-  value: string;
-  timestamp: string;
-  correctedAt?: string;
-  deletedAt?: string;
-}
+import { MemoryEntry } from '@wellcall/shared-types';
+import { ensureCollection, fallbackPointStore, StoredVectorPoint } from './qdrantClient';
+import { embedText, VECTOR_SIZE } from './embeddings';
 
-export interface MemoryCorrection {
-  key: string;
-  newValue: string;
-  reason: string;
+export const SESSION_MEMORY_COLLECTION = 'patient_session_memory';
+
+const QDRANT_URL = process.env.QDRANT_URL || 'http://127.0.0.1:6333';
+
+/**
+ * Ensures session memory collection is initialized in Qdrant
+ */
+export async function ensureSessionMemoryCollection(): Promise<void> {
+  await ensureCollection(SESSION_MEMORY_COLLECTION, VECTOR_SIZE);
 }
 
 /**
- * SessionMemory Store
- * Exposes explicit named methods: getMemory, setMemory, correctMemory, deleteMemory.
+ * Set a new persistent memory entry for a patient.
+ * Embeds summaryText and upserts point into Qdrant "patient_session_memory" collection.
  */
-export class SessionMemory {
-  private store: Map<string, MemoryItem> = new Map();
+export async function setMemory(
+  patientId: string,
+  callId: string,
+  summaryText: string,
+  category: MemoryEntry['category']
+): Promise<MemoryEntry> {
+  await ensureSessionMemoryCollection();
 
-  private getKey(patientId: string, key: string): string {
-    return `${patientId}:${key}`;
-  }
+  const memoryId = `mem_${patientId}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+  const numericId = Math.abs(hashCode(memoryId)) + 20000;
+  const createdAt = new Date().toISOString();
 
-  public async getMemory(patientId: string, key: string): Promise<MemoryItem | null> {
-    const item = this.store.get(this.getKey(patientId, key));
-    if (!item || item.deletedAt) return null;
-    return { ...item };
-  }
+  const entry: MemoryEntry = {
+    id: memoryId,
+    patientId,
+    callId,
+    summaryText,
+    category,
+    createdAt,
+    deleted: false,
+  };
 
-  public async setMemory(patientId: string, key: string, value: string): Promise<MemoryItem> {
-    const item: MemoryItem = {
-      id: `mem-${Date.now()}`,
-      patientId,
-      key,
-      value,
-      timestamp: new Date().toISOString(),
+  const vector = await embedText(summaryText);
+  const payload = {
+    ...entry,
+    numericId,
+  };
+
+  try {
+    const upsertUrl = `${QDRANT_URL}/collections/${SESSION_MEMORY_COLLECTION}/points`;
+    const res = await fetch(upsertUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        points: [
+          {
+            id: numericId,
+            vector,
+            payload,
+          },
+        ],
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Qdrant upsert returned HTTP ${res.status}`);
+    }
+    console.log(`[sessionMemory] Successfully set memory ${memoryId} (point ID: ${numericId}) in Qdrant.`);
+  } catch (err) {
+    console.warn(`[sessionMemory] Qdrant server unreachable. Saving memory ${memoryId} to fallback store.`, err);
+    const points = fallbackPointStore.get(SESSION_MEMORY_COLLECTION) || [];
+    const point: StoredVectorPoint = {
+      id: numericId,
+      vector,
+      payload: { ...payload, riskTier: 'low', flagText: summaryText },
     };
-    this.store.set(this.getKey(patientId, key), item);
-    return { ...item };
+    fallbackPointStore.set(SESSION_MEMORY_COLLECTION, [...points, point]);
   }
 
-  public async correctMemory(patientId: string, correction: MemoryCorrection): Promise<MemoryItem> {
-    const existing = this.store.get(this.getKey(patientId, correction.key));
-    const now = new Date().toISOString();
-    const updated: MemoryItem = {
-      id: existing ? existing.id : `mem-${Date.now()}`,
-      patientId,
-      key: correction.key,
-      value: correction.newValue,
-      timestamp: existing ? existing.timestamp : now,
-      correctedAt: now,
+  return entry;
+}
+
+/**
+ * Retrieve patient's memory entries, filtered by patientId, EXCLUDING deleted entries, most recent first.
+ */
+export async function getMemory(patientId: string, limit: number = 10): Promise<MemoryEntry[]> {
+  await ensureSessionMemoryCollection();
+
+  try {
+    const scrollUrl = `${QDRANT_URL}/collections/${SESSION_MEMORY_COLLECTION}/points/scroll`;
+    const res = await fetch(scrollUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filter: {
+          must: [
+            { key: 'patientId', match: { value: patientId } },
+          ],
+          must_not: [
+            { key: 'deleted', match: { value: true } },
+          ],
+        },
+        limit,
+        with_payload: true,
+      }),
+    });
+
+    if (!res.ok) throw new Error(`Qdrant scroll returned HTTP ${res.status}`);
+
+    const data = (await res.json()) as {
+      result: {
+        points: Array<{
+          id: string | number;
+          payload: MemoryEntry;
+        }>;
+      };
     };
-    this.store.set(this.getKey(patientId, correction.key), updated);
-    console.log(`[sessionMemory] Corrected memory key "${correction.key}". Reason: ${correction.reason}`);
-    return { ...updated };
+
+    const entries = (data.result?.points || []).map((p) => p.payload);
+    // Sort most recent first
+    return entries.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  } catch (err) {
+    console.warn('[sessionMemory] Using fallback memory retrieval.', err);
+    const points = fallbackPointStore.get(SESSION_MEMORY_COLLECTION) || [];
+    return points
+      .map((p) => p.payload as unknown as MemoryEntry)
+      .filter((m) => m.patientId === patientId && !m.deleted)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+}
+
+/**
+ * Correct an existing memory entry by memoryId.
+ * Re-embeds corrected text, updates existing point's payload without creating a duplicate point!
+ */
+export async function correctMemory(memoryId: string, newSummaryText: string): Promise<MemoryEntry> {
+  await ensureSessionMemoryCollection();
+
+  // Retrieve existing point to preserve numericId, createdAt, and metadata
+  const scrollUrl = `${QDRANT_URL}/collections/${SESSION_MEMORY_COLLECTION}/points/scroll`;
+  const scrollRes = await fetch(scrollUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      filter: {
+        must: [{ key: 'id', match: { value: memoryId } }],
+      },
+      limit: 1,
+      with_payload: true,
+    }),
+  });
+
+  if (!scrollRes.ok) throw new Error(`Could not find memory ${memoryId} to correct`);
+  const data = (await scrollRes.json()) as {
+    result: {
+      points: Array<{
+        id: number;
+        payload: MemoryEntry & { numericId: number };
+      }>;
+    };
+  };
+
+  if (!data.result?.points || data.result.points.length === 0) {
+    throw new Error(`Memory entry with id "${memoryId}" not found in Qdrant.`);
   }
 
-  public async deleteMemory(patientId: string, key: string): Promise<boolean> {
-    const existing = this.store.get(this.getKey(patientId, key));
-    if (!existing || existing.deletedAt) return false;
-    existing.deletedAt = new Date().toISOString();
-    this.store.set(this.getKey(patientId, key), existing);
-    return true;
+  const existingPoint = data.result.points[0];
+  const numericId = existingPoint.id;
+  const updatedEntry: MemoryEntry = {
+    ...existingPoint.payload,
+    summaryText: newSummaryText,
+    correctedAt: new Date().toISOString(),
+  };
+
+  const newVector = await embedText(newSummaryText);
+  const upsertUrl = `${QDRANT_URL}/collections/${SESSION_MEMORY_COLLECTION}/points`;
+  
+  await fetch(upsertUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      points: [
+        {
+          id: numericId,
+          vector: newVector,
+          payload: updatedEntry,
+        },
+      ],
+    }),
+  });
+
+  console.log(`[sessionMemory] Corrected memory point ${numericId} (memoryId: ${memoryId}) without duplication.`);
+  return updatedEntry;
+}
+
+/**
+ * Soft delete a memory entry by memoryId (sets deleted: true in payload for audit trail).
+ */
+export async function deleteMemory(memoryId: string): Promise<void> {
+  await ensureSessionMemoryCollection();
+
+  const scrollUrl = `${QDRANT_URL}/collections/${SESSION_MEMORY_COLLECTION}/points/scroll`;
+  const scrollRes = await fetch(scrollUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      filter: {
+        must: [{ key: 'id', match: { value: memoryId } }],
+      },
+      limit: 1,
+      with_payload: true,
+    }),
+  });
+
+  if (!scrollRes.ok) throw new Error(`Could not find memory ${memoryId} to delete`);
+  const data = (await scrollRes.json()) as {
+    result: {
+      points: Array<{
+        id: number;
+        payload: MemoryEntry;
+      }>;
+    };
+  };
+
+  if (!data.result?.points || data.result.points.length === 0) {
+    throw new Error(`Memory entry with id "${memoryId}" not found in Qdrant.`);
   }
+
+  const existingPoint = data.result.points[0];
+  const numericId = existingPoint.id;
+  const softDeletedPayload = {
+    ...existingPoint.payload,
+    deleted: true,
+  };
+
+  // Set payload deleted: true on existing point
+  const setPayloadUrl = `${QDRANT_URL}/collections/${SESSION_MEMORY_COLLECTION}/points/payload`;
+  await fetch(setPayloadUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      payload: { deleted: true },
+      points: [numericId],
+    }),
+  });
+
+  console.log(`[sessionMemory] Soft-deleted memory point ${numericId} (memoryId: ${memoryId}) with deleted: true.`);
+}
+
+/**
+ * Retrieve semantically relevant memories for current context, filtered by patientId and excluding deleted memories.
+ */
+export async function getRelevantMemory(
+  patientId: string,
+  currentContext: string,
+  limit: number = 3
+): Promise<MemoryEntry[]> {
+  await ensureSessionMemoryCollection();
+
+  const contextVector = await embedText(currentContext);
+  const searchUrl = `${QDRANT_URL}/collections/${SESSION_MEMORY_COLLECTION}/points/search`;
+
+  const res = await fetch(searchUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      vector: contextVector,
+      filter: {
+        must: [
+          { key: 'patientId', match: { value: patientId } },
+        ],
+        must_not: [
+          { key: 'deleted', match: { value: true } },
+        ],
+      },
+      limit,
+      with_payload: true,
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Qdrant relevant memory search returned HTTP ${res.status}`);
+
+  const data = (await res.json()) as {
+    result: Array<{
+      id: number;
+      score: number;
+      payload: MemoryEntry;
+    }>;
+  };
+
+  const results = data.result || [];
+  console.log(`[sessionMemory] Relevant memory search for context "${currentContext}":`);
+  results.forEach((r) => {
+    console.log(`  -> Score: ${r.score.toFixed(4)} | Memory: "${r.payload.summaryText}"`);
+  });
+
+  return results.map((r) => r.payload);
+}
+
+function hashCode(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return hash;
 }
