@@ -8,21 +8,10 @@
     { "name": "Aspirin", "dosage": "81mg", "frequency": "Once daily", "purpose": "Antiplatelet" },
     { "name": "Atorvastatin", "dosage": "40mg", "frequency": "At bedtime", "purpose": "Lipid control" }
   ],
-  "redFlags": [
-    {
-      "id": "rf-cabg-01",
-      "category": "cardiac",
-      "description": "Sudden chest tightness, heavy pressure, or severe sternal pain",
-      "severity": "critical",
-      "exampleUtterances": ["chest feels tight", "heavy chest pressure", "chest is squeezing"]
-    },
-    {
-      "id": "rf-cabg-02",
-      "category": "respiratory",
-      "description": "Shortness of breath while resting",
-      "severity": "high",
-      "exampleUtterances": ["can barely breathe", "gasping for air", "shortness of breath while sitting"]
-    }
+  "redFlagSymptoms": [
+    "Sudden chest tightness, heavy pressure, or severe sternal pain",
+    "Shortness of breath while resting",
+    "Rapid weight gain over 3 lbs in 24 hours"
   ],
   "emergencyContacts": [
     { "name": "Robert Smith", "relationship": "Spouse", "phone": "+1 (555) 019-2831" }

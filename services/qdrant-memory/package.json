@@ -8,9 +8,11 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
+    "seed": "tsc && node dist/seed.js",
     "test": "node --test dist/redFlagMatcher.test.js"
   },
   "dependencies": {
+    "@qdrant/js-client-rest": "^1.9.0",
     "@wellcall/shared-types": "workspace:*"
   },
   "devDependencies": {

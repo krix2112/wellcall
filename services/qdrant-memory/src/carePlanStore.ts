@@ -1,30 +1,86 @@
-import { Patient, RedFlagDefinition } from '@wellcall/shared-types';
+import { Patient } from '@wellcall/shared-types';
+import { qdrantClient, fallbackPointStore, StoredVectorPoint } from './qdrantClient';
+import { embedText } from './embeddings';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
-export interface QdrantConfig {
-  url: string;
-  apiKey?: string;
+export const RED_FLAGS_COLLECTION = 'patient_red_flags';
+
+/**
+ * Seeds a patient's red-flag symptom list into Qdrant vector memory.
+ * For EACH string in patient.redFlagSymptoms, generates an embedding and upserts
+ * a point with payload: { patientId: patient.id, flagText: string, riskTier: 'high' }
+ */
+export async function seedPatientCarePlan(patient: Patient): Promise<void> {
+  const redFlags = patient.redFlagSymptoms || [];
+  console.log(`[carePlanStore] Seeding ${redFlags.length} red-flag vectors for patient: ${patient.name} (${patient.id})`);
+
+  const points: StoredVectorPoint[] = [];
+
+  for (let i = 0; i < redFlags.length; i++) {
+    const flagText = redFlags[i];
+    const vector = await embedText(flagText);
+    const pointId = Math.abs(hashCode(`${patient.id}:${flagText}:${i}`)) + 1000;
+
+    points.push({
+      id: pointId,
+      vector,
+      payload: {
+        patientId: patient.id,
+        flagText,
+        riskTier: 'high',
+      },
+    });
+  }
+
+  try {
+    await qdrantClient.upsert(RED_FLAGS_COLLECTION, {
+      wait: true,
+      points: points.map((p) => ({
+        id: p.id,
+        vector: p.vector,
+        payload: p.payload,
+      })),
+    });
+    console.log(`[carePlanStore] Successfully upserted ${points.length} points to Qdrant server.`);
+  } catch {
+    console.warn(`[carePlanStore] Qdrant server unreachable. Saving ${points.length} points to in-memory fallback store.`);
+    const existing = fallbackPointStore.get(RED_FLAGS_COLLECTION) || [];
+    const filtered = existing.filter((p) => p.payload.patientId !== patient.id);
+    fallbackPointStore.set(RED_FLAGS_COLLECTION, [...filtered, ...points]);
+  }
 }
 
 /**
- * Pure functions: Per-patient care plan CRUD and red-flag indexing in Qdrant.
+ * Fetch patient care plan data by patient ID.
+ * TODO: In production, patient details are queried from SQLite/PostgreSQL gateway DB.
+ * For this workspace package, we read from synthetic JSON datasets in data/synthetic-patients/
+ * to maintain clean workspace package separation without cross-service circular dependencies.
  */
-export class CarePlanStore {
-  private url: string;
-  private apiKey?: string;
+export async function getCarePlan(patientId: string): Promise<Patient | null> {
+  try {
+    const dataDir = path.resolve(__dirname, '../../../data/synthetic-patients');
+    if (!fs.existsSync(dataDir)) return null;
 
-  constructor(config?: QdrantConfig) {
-    this.url = config?.url || process.env.QDRANT_URL || 'http://localhost:6333';
-    this.apiKey = config?.apiKey || process.env.QDRANT_API_KEY;
+    const files = fs.readdirSync(dataDir).filter((f) => f.endsWith('.json'));
+    for (const file of files) {
+      const content = fs.readFileSync(path.join(dataDir, file), 'utf-8');
+      const patient = JSON.parse(content) as Patient;
+      if (patient.id === patientId) {
+        return patient;
+      }
+    }
+  } catch (err) {
+    console.error('[carePlanStore] Error reading patient care plan:', err);
   }
+  return null;
+}
 
-  public async upsertCarePlan(patient: Patient): Promise<void> {
-    console.log(`[qdrant-memory] Indexing care plan in Qdrant for patient: ${patient.id}`);
-    // TODO: Store patient red-flag vectors in Qdrant
+function hashCode(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
   }
-
-  public async getRedFlags(patientId: string): Promise<RedFlagDefinition[]> {
-    console.log(`[qdrant-memory] Querying Qdrant for red flags: ${patientId}`);
-    // TODO: Query Qdrant for patient red flag vectors
-    return [];
-  }
+  return hash;
 }

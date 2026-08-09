@@ -1,4 +1,4 @@
-import { RedFlagDefinition, RedFlagMatch } from '@wellcall/shared-types';
+import { RedFlagMatch } from '@wellcall/shared-types';
 
 /**
  * Standalone semantic red-flag matcher function.
@@ -6,32 +6,28 @@ import { RedFlagDefinition, RedFlagMatch } from '@wellcall/shared-types';
  */
 export async function matchRedFlags(
   symptom: string,
-  redFlags: RedFlagDefinition[]
+  redFlags: string[]
 ): Promise<RedFlagMatch> {
   const normalized = symptom.toLowerCase().trim();
 
-  if (!normalized || redFlags.length === 0) {
+  if (!normalized || !redFlags || redFlags.length === 0) {
     return {
       matched: false,
       riskTier: 'low',
-      confidence: 1.0,
-      explanation: 'No symptom phrase provided or red flag list is empty.',
+      reason: 'No symptom phrase provided or red flag list is empty.',
     };
   }
 
-  // Exact & Substring Keyword Matching
-  for (const flag of redFlags) {
-    const matchedPhrase = flag.exampleUtterances.find((phrase) =>
-      normalized.includes(phrase.toLowerCase())
-    );
+  // Substring & Keyword Matching
+  for (const flagText of redFlags) {
+    const flagLower = flagText.toLowerCase();
 
-    if (matchedPhrase || normalized.includes(flag.category.toLowerCase())) {
+    if (normalized.includes(flagLower) || flagLower.split(' ').some((word) => word.length > 3 && normalized.includes(word))) {
       return {
         matched: true,
-        matchedFlag: flag.id,
-        riskTier: flag.severity,
-        confidence: 0.95,
-        explanation: `Symptom "${symptom}" matched red-flag criteria: ${flag.description}`,
+        matchedFlag: flagText,
+        riskTier: 'high',
+        reason: `Symptom "${symptom}" matched red-flag criteria: ${flagText}`,
       };
     }
   }
@@ -39,7 +35,6 @@ export async function matchRedFlags(
   return {
     matched: false,
     riskTier: 'low',
-    confidence: 0.5,
-    explanation: 'No direct keyword or semantic red flag match found.',
+    reason: 'No direct keyword or semantic red flag match found.',
   };
 }

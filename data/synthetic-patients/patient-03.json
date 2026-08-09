@@ -6,16 +6,12 @@
   "followUpDate": "2026-08-17",
   "medications": [
     { "name": "Furosemide", "dosage": "40mg", "frequency": "Every morning", "purpose": "Diuretic" },
-    { "name": "Lisopril", "dosage": "10mg", "frequency": "Once daily", "purpose": "ACE inhibitor" }
+    { "name": "Lisinopril", "dosage": "10mg", "frequency": "Once daily", "purpose": "ACE inhibitor" }
   ],
-  "redFlags": [
-    {
-      "id": "rf-chf-01",
-      "category": "fluid_overload",
-      "description": "Rapid fluid weight gain of 3+ lbs in 24 hours or 5+ lbs in a week",
-      "severity": "high",
-      "exampleUtterances": ["gained 3 pounds overnight", "weight jumped 4 pounds", "swollen ankles and feet"]
-    }
+  "redFlagSymptoms": [
+    "Rapid fluid weight gain of 3+ lbs in 24 hours or 5+ lbs in a week",
+    "Bilateral ankle edema and swelling",
+    "Inability to lie flat without shortness of breath"
   ],
   "emergencyContacts": [
     { "name": "Mary Johnson", "relationship": "Daughter", "phone": "+1 (555) 019-3321" }

@@ -8,14 +8,10 @@
     { "name": "Enoxaparin", "dosage": "40mg", "frequency": "SubQ daily", "purpose": "DVT prophylaxis" },
     { "name": "Celecoxib", "dosage": "100mg", "frequency": "Twice daily", "purpose": "NSAID" }
   ],
-  "redFlags": [
-    {
-      "id": "rf-hip-01",
-      "category": "vascular",
-      "description": "Unilateral calf swelling, redness, or calf tenderness (DVT risk)",
-      "severity": "high",
-      "exampleUtterances": ["calf is red and swollen", "pain in back of leg", "leg is warm and painful"]
-    }
+  "redFlagSymptoms": [
+    "Unilateral calf swelling, redness, or calf tenderness",
+    "Inability to bear weight on surgical leg",
+    "Wound drainage or incision redness"
   ],
   "emergencyContacts": [
     { "name": "Mark Davis", "relationship": "Son", "phone": "+1 (555) 019-4412" }

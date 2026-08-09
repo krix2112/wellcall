@@ -8,21 +8,11 @@
     { "name": "Acetaminophen", "dosage": "500mg", "frequency": "Every 6 hours PRN", "purpose": "Pain relief" },
     { "name": "Ibuprofen", "dosage": "400mg", "frequency": "Every 8 hours with food", "purpose": "Anti-inflammatory" }
   ],
-  "redFlags": [
-    {
-      "id": "rf-chole-01",
-      "category": "abdominal",
-      "description": "Severe right upper quadrant pain unresponsive to oral analgesics",
-      "severity": "critical",
-      "exampleUtterances": ["severe belly pain", "stomach pain is unbearable", "meds not helping right side pain"]
-    },
-    {
-      "id": "rf-chole-02",
-      "category": "systemic",
-      "description": "High fever greater than 101F or shaking chills",
-      "severity": "high",
-      "exampleUtterances": ["high fever", "shaking chills", "temperature over 101"]
-    }
+  "redFlagSymptoms": [
+    "Severe right upper quadrant pain unresponsive to oral analgesics",
+    "High fever greater than 101F or persistent shaking chills",
+    "Jaundice or dark tea-colored urine",
+    "Persistent vomiting or inability to keep fluids down"
   ],
   "emergencyContacts": [
     { "name": "Jane Doe", "relationship": "Spouse", "phone": "+1 (555) 019-1001" }
