@@ -38,10 +38,10 @@ export interface TranscriptEntry {
 }
 
 export interface ExtractedFields {
-  symptom: string;
-  severity: string;
-  mood: string;
-  medAdherence: boolean;
+  symptom: string | null;
+  severity: 'none' | 'mild' | 'moderate' | 'severe' | null;
+  mood: string | null;
+  medAdherence: 'yes' | 'no' | 'unclear' | null;
 }
 
 export interface RedFlagMatch {
