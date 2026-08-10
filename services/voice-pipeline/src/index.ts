@@ -227,7 +227,7 @@ async function bootstrap() {
   // Seed Qdrant red-flag vectors at startup — from synthetic patient files
   // AND from the gateway DB's live patient records (so API data and Qdrant
   // embeddings are consistent).
-  seedRedFlags().catch((err) => {
+  seedRedFlags().catch((err: any) => {
     console.error('[orchestrator] Qdrant seed (synthetic) failed:', err);
   });
   try {

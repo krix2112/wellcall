@@ -11,27 +11,15 @@ import { processTranscriptChunk } from '../index';
 import { RimeClient } from '../rimeClient';
 import { generateWellCallResponse } from '@wellcall/extraction';
 import { getPatientById, insertCall } from './db';
+import { getDeepgramClient } from '../sttClient';
 
 // Allowed dashboard origins for CORS (browser frontend + gateway backend separation).
-// The gateway listens on its own port (default 3001) and the Next.js dashboard
-// listens on its own port (default 3000). Both must be explicitly allowed.
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
   'http://localhost:3001',
   'http://127.0.0.1:3001',
 ];
-
-// Create a Deepgram v1 SDK live transcription connection.
-// Uses the legacy `Deepgram` constructor + `transcription.live` API
-// matching the installed @deepgram/sdk@1.21.0 (NOT the v3 `createClient` API).
-function createDeepgramLive(apiKey: string, options: Record<string, unknown>) {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const sdk = require('@deepgram/sdk');
-  const dg = new sdk.Deepgram(apiKey);
-  const conn = dg.transcription.live(options);
-  return { conn };
-}
 
 export class GatewaySocketManager {
   private io: SocketIOServer<ClientToServerEvents, ServerToClientEvents>;
@@ -78,15 +66,10 @@ export class GatewaySocketManager {
         await insertCall(callSession);
         console.log(`[gateway/socket] [CALL] created call record: ${callId}`);
 
-        const apiKey = process.env.DEEPGRAM_API_KEY;
-        if (!apiKey || apiKey === 'your_deepgram_api_key_here') {
-          console.warn('[gateway/socket] DEEPGRAM_API_KEY not configured — voice transcription unavailable.');
-          socket.emit('voice:transcript', { callId, text: '[Deepgram API key not set — transcription unavailable]', isFinal: true });
-          return;
-        }
-
         try {
-          const { conn } = createDeepgramLive(apiKey, {
+          const dg = getDeepgramClient();
+
+          const conn = dg.transcription.live({
             model: 'nova-3',
             language: 'en-US',
             smart_format: true,
@@ -100,20 +83,19 @@ export class GatewaySocketManager {
 
           this.activeSessions.set(callId, { dgConnection: conn, patientId, patientName, patientCondition, callId });
 
-          // v1 SDK emits 'transcriptReceived' with a raw JSON string payload
           let hasSentGreeting = false;
 
-          conn.on('transcriptReceived', async (raw: any) => {
-            let data: any = raw;
-            if (typeof raw === 'string') {
-              try { data = JSON.parse(raw); } catch { /* ignore parse failures */ }
-            } else if (raw && typeof raw.data === 'string') {
-              try { data = JSON.parse(raw.data); } catch { data = raw; }
+          const onTranscript = async (data: any) => {
+            let payload: any = data;
+            if (typeof data === 'string') {
+              try { payload = JSON.parse(data); } catch { /* ignore */ }
+            } else if (data && typeof data.data === 'string') {
+              try { payload = JSON.parse(data.data); } catch { payload = data; }
             }
 
-            const alt = data?.channel?.alternatives?.[0];
+            const alt = payload?.channel?.alternatives?.[0];
             const text: string = (alt?.transcript ?? '').trim();
-            const isFinal: boolean = data.is_final === true;
+            const isFinal: boolean = payload?.is_final === true;
 
             if (!text) return;
 
@@ -122,7 +104,6 @@ export class GatewaySocketManager {
             // Send live transcript back to browser
             socket.emit('voice:transcript', { callId, text, isFinal });
 
-            // On first connection, emit a "listening" status
             if (!hasSentGreeting && isFinal) {
               hasSentGreeting = true;
             }
@@ -132,12 +113,10 @@ export class GatewaySocketManager {
               console.log(`[gateway/socket] [PROCESS] Final transcript (${text.split(' ').length} words) — running pipeline`);
               await this.handlePatientTranscript(socket, callId, patientId, text, patientName, patientCondition);
             }
-          });
+          };
 
-          conn.on('error', (err: any) => {
-            console.error('[gateway/socket] Deepgram error:', err);
-          });
-
+          conn.on('transcriptReceived', onTranscript);
+          conn.on('error', (err: any) => console.error('[gateway/socket] Deepgram error:', err));
           conn.on('close', () => {
             console.log(`[gateway/socket] Deepgram session closed: ${callId}`);
             this.activeSessions.delete(callId);
@@ -171,42 +150,39 @@ export class GatewaySocketManager {
         this.emitCallStatus(callId, 'ended');
       });
 
-      // --- Start a real browser-initiated call (greeting via Rime) ---
+      // --- Initiate Call Greeting ---
       socket.on('call:start', async ({ patientId }: { patientId: string }) => {
-        const targetPatientId = patientId || 'patient-01';
-        const patient = await getPatientById(targetPatientId);
+        console.log(`[gateway/socket] [CALL] call:start request for patient: ${patientId}`);
+        const callId = `call-web-${Date.now()}`;
+        socket.emit('call:status', { callId, status: 'ringing' });
 
-        const sessionCallId = `call-browser-${Date.now()}`;
-        const callSession: CallSession = {
-          id: sessionCallId,
-          patientId: targetPatientId,
-          status: 'ringing',
-          startedAt: new Date().toISOString(),
-        };
-        await insertCall(callSession);
-        this.emitCallStatus(sessionCallId, 'ringing');
+        const patient = await getPatientById(patientId);
+        const name = patient?.name?.split(' ')[0] || 'there';
+        const greetingText = `Hello ${name}, this is WellCall checking in after your discharge. How are you feeling today?`;
 
-        // Greeting via Rime
-        const greeting = patient
-          ? `Hello ${patient.name}, this is WellCall checking in on your recovery. How are you feeling today?`
-          : 'Hello, this is WellCall. How are you feeling today?';
+        // Emit text response to browser UI
+        socket.emit('voice:response', { callId, text: greetingText });
 
-        console.log(`[gateway/socket] [RIME] Greeting for ${targetPatientId}: "${greeting}"`);
-        socket.emit('voice:response', { callId: sessionCallId, text: greeting, isFinal: true });
-        this.emitCallStatus(sessionCallId, 'connected');
-
-        try {
-          const audioBuffer = await this.rimeClient.speak(greeting);
-          console.log(`[gateway/socket] [RIME] Greeting audio sent (${audioBuffer.length} bytes)`);
-          socket.emit('voice:audio', { callId: sessionCallId, audio: audioBuffer.buffer });
-        } catch (err) {
-          console.error('[gateway/socket] [RIME] Greeting TTS failed:', err instanceof Error ? err.message : err);
+        // Synthesize Rime TTS audio greeting
+        const rimeApiKey = process.env.RIME_API_KEY;
+        if (rimeApiKey && rimeApiKey !== 'your_rime_api_key_here') {
+          try {
+            console.log(`[gateway/socket] [RIME] Synthesizing greeting audio: "${greetingText}"`);
+            const audioBuffer = await this.rimeClient.speak(greetingText);
+            if (audioBuffer && audioBuffer.byteLength > 0) {
+              console.log(`[gateway/socket] [RIME] Emitting greeting audio buffer (${audioBuffer.byteLength} bytes)`);
+              socket.emit('voice:audio', { callId, audio: audioBuffer });
+            }
+          } catch (err) {
+            console.warn('[gateway/socket] [RIME] Greeting audio synthesis failed, continuing text-only:', err);
+          }
         }
+
+        socket.emit('call:status', { callId, status: 'connected' });
       });
 
       socket.on('disconnect', () => {
         console.log(`[gateway/socket] Client disconnected: ${socket.id}`);
-        // Clean up any lingering sessions
         for (const [callId, session] of this.activeSessions.entries()) {
           try { session.dgConnection.finish(); } catch { /* ignore */ }
           this.activeSessions.delete(callId);
@@ -215,53 +191,66 @@ export class GatewaySocketManager {
     });
   }
 
-    // --- Typed Socket Emit Helpers ---
-
   /**
-   * Process a patient transcript through the full pipeline:
-   * Groq extraction → Qdrant red-flag match → Risk engine →
-   * Groq response generation → Rime TTS → browser audio.
+   * Process patient utterance through intelligence pipeline + generate voice response
    */
   private async handlePatientTranscript(
-    socket: Socket<any, any>,
+    socket: Socket,
     callId: string,
     patientId: string,
-    transcriptText: string,
+    text: string,
     patientName?: string,
-    patientCondition?: string,
+    patientCondition?: string
   ): Promise<void> {
     try {
-      // 1. Run the full intelligence pipeline
-      const { extracted, redFlagMatch, decision } = await processTranscriptChunk(callId, patientId, transcriptText);
+      // 1. Run intelligence pipeline (Groq -> Qdrant -> Risk Engine -> DB)
+      const { extracted, redFlagMatch, decision } = await processTranscriptChunk(callId, patientId, text);
 
-      // 2. Generate WellCall's conversational response
-      const wellcallResponse = await generateWellCallResponse(transcriptText, {
-        name: patientName,
-        condition: patientCondition,
-      }, extracted, redFlagMatch, decision);
+      // 2. Generate context-aware Conversational AI Response
+      let responseText = '';
+      if (decision.action === 'escalate') {
+        responseText = 'I understand you are experiencing symptoms. I am notifying your care team and escalating to a nurse immediately. Please stay calm.';
+      } else {
+        try {
+          responseText = await generateWellCallResponse(
+            text,
+            { name: patientName, condition: patientCondition },
+            extracted,
+            redFlagMatch,
+            decision
+          );
+        } catch {
+          responseText = 'Thank you for providing that update. I have logged this check-in for your care team.';
+        }
+      }
 
-      console.log(`[gateway/socket] [RIME] Generating TTS for response: "${wellcallResponse}"`);
+      console.log(`[gateway/socket] [AI RESPONSE] "${responseText}"`);
+      socket.emit('voice:response', { callId, text: responseText });
 
-      // 3. Emit WellCall's text response to browser
-      socket.emit('voice:response', { callId, text: wellcallResponse, isFinal: true });
+      // 3. Synthesize voice audio via Rime TTS
+      const rimeApiKey = process.env.RIME_API_KEY;
+      if (rimeApiKey && rimeApiKey !== 'your_rime_api_key_here') {
+        try {
+          console.log(`[gateway/socket] [RIME] Synthesizing response audio...`);
+          const audioBuffer = await this.rimeClient.speak(responseText);
+          if (audioBuffer && audioBuffer.byteLength > 0) {
+            console.log(`[gateway/socket] [RIME] Emitting response audio buffer (${audioBuffer.byteLength} bytes)`);
+            socket.emit('voice:audio', { callId, audio: audioBuffer });
+          }
+        } catch (err) {
+          console.warn('[gateway/socket] [RIME] Audio synthesis failed:', err);
+        }
+      }
 
-      // 4. Synthesize with Rime and emit audio
-      try {
-        const audioBuffer = await this.rimeClient.speak(wellcallResponse);
-        console.log(`[gateway/socket] [RIME] Audio generated (${audioBuffer.length} bytes), sending to browser`);
-        socket.emit('voice:audio', { callId, audio: audioBuffer.buffer });
-      } catch (err) {
-        console.error('[gateway/socket] [RIME] TTS synthesis failed:', err instanceof Error ? err.message : err);
-        socket.emit('voice:transcript', {
-          callId,
-          text: `[TTS unavailable: ${(err as Error).message || 'unknown error'}]`,
-          isFinal: true,
-        });
+      if (decision.action === 'escalate') {
+        socket.emit('call:status', { callId, status: 'ended' });
       }
     } catch (err) {
-      console.error('[gateway/socket] [PROCESS] Intelligence pipeline error:', err);
+      console.error('[gateway/socket] Error processing transcript chunk:', err);
     }
   }
+
+  // --- Typed Socket Emit Helpers ---
 
   public emitTranscriptNew(entry: TranscriptEntry): void {
     console.log(`[gateway/socket] Emitting transcript:new -> "${entry.text}"`);
