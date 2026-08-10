@@ -9,18 +9,17 @@ import {
   ensureSessionMemoryCollection,
   SESSION_MEMORY_COLLECTION,
 } from './sessionMemory';
-
-const QDRANT_URL = process.env.QDRANT_URL || 'http://127.0.0.1:6333';
+import { qdrantFetch } from './qdrantClient';
 
 async function getQdrantPointCount(): Promise<number> {
-  const res = await fetch(`${QDRANT_URL}/collections/${SESSION_MEMORY_COLLECTION}`);
+  const res = await qdrantFetch(`/collections/${SESSION_MEMORY_COLLECTION}`);
   const data = (await res.json()) as { result: { points_count: number } };
   return data.result.points_count;
 }
 
 test('sessionMemory - TEST 1: setMemory then getMemory retrieves record correctly', async () => {
   await ensureSessionMemoryCollection();
-  const patientId = 'patient-test-01';
+  const patientId = `patient-test-01-${Date.now()}`;
 
   const entry = await setMemory(
     patientId,
@@ -30,7 +29,7 @@ test('sessionMemory - TEST 1: setMemory then getMemory retrieves record correctl
   );
 
   assert.ok(entry.id.startsWith('mem_'), 'Memory ID should have mem_ prefix');
-  
+
   const memories = await getMemory(patientId);
   assert.ok(memories.length >= 1, 'getMemory should return at least 1 memory');
   assert.strictEqual(memories[0].id, entry.id);
@@ -39,7 +38,7 @@ test('sessionMemory - TEST 1: setMemory then getMemory retrieves record correctl
 
 test('sessionMemory - TEST 2: correctMemory updates existing entry WITHOUT point duplication', async () => {
   await ensureSessionMemoryCollection();
-  const patientId = 'patient-test-02';
+  const patientId = `patient-test-02-${Date.now()}`;
 
   const initialEntry = await setMemory(
     patientId,
@@ -65,7 +64,7 @@ test('sessionMemory - TEST 2: correctMemory updates existing entry WITHOUT point
 
 test('sessionMemory - TEST 3: deleteMemory soft-deletes entry (deleted: true in Qdrant, filtered out from getMemory)', async () => {
   await ensureSessionMemoryCollection();
-  const patientId = 'patient-test-03';
+  const patientId = `patient-test-03-${Date.now()}`;
 
   const entry = await setMemory(
     patientId,
@@ -81,9 +80,8 @@ test('sessionMemory - TEST 3: deleteMemory soft-deletes entry (deleted: true in 
   assert.strictEqual(foundInActive, false, 'Soft-deleted memory MUST NOT appear in active getMemory() results');
 
   // Verify point still exists in Qdrant with deleted: true
-  const scrollRes = await fetch(`${QDRANT_URL}/collections/${SESSION_MEMORY_COLLECTION}/points/scroll`, {
+  const scrollRes = await qdrantFetch(`/collections/${SESSION_MEMORY_COLLECTION}/points/scroll`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       filter: { must: [{ key: 'id', match: { value: entry.id } }] },
       limit: 1,
@@ -96,7 +94,7 @@ test('sessionMemory - TEST 3: deleteMemory soft-deletes entry (deleted: true in 
 
 test('sessionMemory - TEST 4: getRelevantMemory semantic search retrieves relevant memory over recent unrelated ones', async () => {
   await ensureSessionMemoryCollection();
-  const patientId = 'patient-test-04-scores';
+  const patientId = `patient-test-04-${Date.now()}`;
 
   // Seed 2 unrelated memories + 1 semantically target memory
   const mem1 = await setMemory(patientId, 'call-201', 'Patient likes watching baseball games on weekend afternoons', 'general');

@@ -1,10 +1,8 @@
 import { MemoryEntry } from '@wellcall/shared-types';
-import { ensureCollection, fallbackPointStore, StoredVectorPoint } from './qdrantClient';
+import { ensureCollection, fallbackPointStore, qdrantFetch, StoredVectorPoint } from './qdrantClient';
 import { embedText, VECTOR_SIZE } from './embeddings';
 
 export const SESSION_MEMORY_COLLECTION = 'patient_session_memory';
-
-const QDRANT_URL = process.env.QDRANT_URL || 'http://127.0.0.1:6333';
 
 /**
  * Ensures session memory collection is initialized in Qdrant
@@ -46,10 +44,8 @@ export async function setMemory(
   };
 
   try {
-    const upsertUrl = `${QDRANT_URL}/collections/${SESSION_MEMORY_COLLECTION}/points`;
-    const res = await fetch(upsertUrl, {
+    const res = await qdrantFetch(`/collections/${SESSION_MEMORY_COLLECTION}/points`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         points: [
           {
@@ -86,10 +82,8 @@ export async function getMemory(patientId: string, limit: number = 10): Promise<
   await ensureSessionMemoryCollection();
 
   try {
-    const scrollUrl = `${QDRANT_URL}/collections/${SESSION_MEMORY_COLLECTION}/points/scroll`;
-    const res = await fetch(scrollUrl, {
+    const res = await qdrantFetch(`/collections/${SESSION_MEMORY_COLLECTION}/points/scroll`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         filter: {
           must: [
@@ -135,11 +129,8 @@ export async function getMemory(patientId: string, limit: number = 10): Promise<
 export async function correctMemory(memoryId: string, newSummaryText: string): Promise<MemoryEntry> {
   await ensureSessionMemoryCollection();
 
-  // Retrieve existing point to preserve numericId, createdAt, and metadata
-  const scrollUrl = `${QDRANT_URL}/collections/${SESSION_MEMORY_COLLECTION}/points/scroll`;
-  const scrollRes = await fetch(scrollUrl, {
+  const scrollRes = await qdrantFetch(`/collections/${SESSION_MEMORY_COLLECTION}/points/scroll`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       filter: {
         must: [{ key: 'id', match: { value: memoryId } }],
@@ -172,11 +163,8 @@ export async function correctMemory(memoryId: string, newSummaryText: string): P
   };
 
   const newVector = await embedText(newSummaryText);
-  const upsertUrl = `${QDRANT_URL}/collections/${SESSION_MEMORY_COLLECTION}/points`;
-  
-  await fetch(upsertUrl, {
+  await qdrantFetch(`/collections/${SESSION_MEMORY_COLLECTION}/points`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       points: [
         {
@@ -198,10 +186,8 @@ export async function correctMemory(memoryId: string, newSummaryText: string): P
 export async function deleteMemory(memoryId: string): Promise<void> {
   await ensureSessionMemoryCollection();
 
-  const scrollUrl = `${QDRANT_URL}/collections/${SESSION_MEMORY_COLLECTION}/points/scroll`;
-  const scrollRes = await fetch(scrollUrl, {
+  const scrollRes = await qdrantFetch(`/collections/${SESSION_MEMORY_COLLECTION}/points/scroll`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       filter: {
         must: [{ key: 'id', match: { value: memoryId } }],
@@ -227,16 +213,9 @@ export async function deleteMemory(memoryId: string): Promise<void> {
 
   const existingPoint = data.result.points[0];
   const numericId = existingPoint.id;
-  const softDeletedPayload = {
-    ...existingPoint.payload,
-    deleted: true,
-  };
 
-  // Set payload deleted: true on existing point
-  const setPayloadUrl = `${QDRANT_URL}/collections/${SESSION_MEMORY_COLLECTION}/points/payload`;
-  await fetch(setPayloadUrl, {
+  await qdrantFetch(`/collections/${SESSION_MEMORY_COLLECTION}/points/payload`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       payload: { deleted: true },
       points: [numericId],
@@ -257,11 +236,8 @@ export async function getRelevantMemory(
   await ensureSessionMemoryCollection();
 
   const contextVector = await embedText(currentContext);
-  const searchUrl = `${QDRANT_URL}/collections/${SESSION_MEMORY_COLLECTION}/points/search`;
-
-  const res = await fetch(searchUrl, {
+  const res = await qdrantFetch(`/collections/${SESSION_MEMORY_COLLECTION}/points/search`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       vector: contextVector,
       filter: {

@@ -9,6 +9,27 @@ export const qdrantClient = new QdrantClient({
   checkCompatibility: false,
 });
 
+/**
+ * Authenticated REST fetch helper for Qdrant (Cloud & Local)
+ * Automatically attaches 'api-key' header when QDRANT_API_KEY is set.
+ */
+export async function qdrantFetch(endpointPath: string, init?: RequestInit): Promise<Response> {
+  const url = `${QDRANT_URL}${endpointPath}`;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(init?.headers as Record<string, string>),
+  };
+
+  if (QDRANT_API_KEY) {
+    headers['api-key'] = QDRANT_API_KEY;
+  }
+
+  return fetch(url, {
+    ...init,
+    headers,
+  });
+}
+
 export interface StoredVectorPoint {
   id: string | number;
   vector: number[];

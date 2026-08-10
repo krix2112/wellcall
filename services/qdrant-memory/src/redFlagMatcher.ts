@@ -1,5 +1,5 @@
 import { RedFlagMatch } from '@wellcall/shared-types';
-import { fallbackPointStore } from './qdrantClient';
+import { fallbackPointStore, qdrantFetch } from './qdrantClient';
 import { RED_FLAGS_COLLECTION } from './carePlanStore';
 import { embedText } from './embeddings';
 
@@ -9,11 +9,9 @@ import { embedText } from './embeddings';
  */
 export const SIMILARITY_THRESHOLD = 0.50;
 
-const QDRANT_URL = process.env.QDRANT_URL || 'http://127.0.0.1:6333';
-
 /**
  * Core Semantic Red-Flag Matcher
- * Queries Qdrant using vector similarity search, filtered strictly by patientId payload filter.
+ * Queries Qdrant using vector similarity search via authenticated qdrantFetch, filtered strictly by patientId payload filter.
  */
 export async function matchRedFlag(
   patientId: string,
@@ -22,10 +20,8 @@ export async function matchRedFlag(
   const spokenVector = await embedText(spokenText);
 
   try {
-    const searchUrl = `${QDRANT_URL}/collections/${RED_FLAGS_COLLECTION}/points/search`;
-    const res = await fetch(searchUrl, {
+    const res = await qdrantFetch(`/collections/${RED_FLAGS_COLLECTION}/points/search`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         vector: spokenVector,
         filter: {
