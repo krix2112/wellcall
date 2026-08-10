@@ -1,8 +1,7 @@
-import '../scripts/loadEnv';
 import { createGatewayServer, GatewayServerBundle } from './gateway/server';
 import { insertTranscriptEntry, getPatientById } from './gateway/db';
 import { GatewaySocketManager } from './gateway/socket';
-import { TranscriptEntry, Escalation } from '@wellcall/shared-types';
+import { TranscriptEntry, Escalation, ExtractedFields, RedFlagMatch, RiskDecision } from '@wellcall/shared-types';
 import { TelephonyClient } from './telephonyClient';
 import { STTClient } from './sttClient';
 import { RimeClient } from './rimeClient';
@@ -10,17 +9,19 @@ import { CallStateMachine } from './callStateMachine';
 import fs from 'fs';
 import path from 'path';
 
-// Task 1: Intelligence-layer imports for Phase 3 pipeline integration
+// Intelligence-layer workspace imports
 import { extractFields } from '@wellcall/extraction';
 import { matchRedFlag } from '@wellcall/qdrant-memory';
 import { decideRisk } from '@wellcall/risk-engine';
 import { generateAuditRecord, formatAuditRecordAsText } from '@wellcall/audit-report';
 
+// Demo Script scenarios
+import { DEMO_SCENARIOS, DemoScriptItem } from './demoScript';
+
 let gatewayBundle: GatewayServerBundle | null = null;
 
 /**
  * Singleton getter to access the live GatewaySocketManager instance
- * across all orchestrator pipeline modules (e.g. callStateMachine.ts).
  */
 export function getSocketManager(): GatewaySocketManager {
   if (!gatewayBundle || !gatewayBundle.socketManager) {
@@ -30,79 +31,172 @@ export function getSocketManager(): GatewaySocketManager {
 }
 
 /**
- * Task 2: Phase 3 Integration Pipeline function (Prepared for live wiring)
- * Processes an incoming transcript chunk from patient audio:
- * 1. Calls Groq LLM field extraction (extractFields)
- * 2. Matches against Qdrant Cloud patient red flags (matchRedFlag)
- * 3. Evaluates deterministic risk action (decideRisk)
- * 4. Emits live transcript entry to web dashboard over Socket.io
- * 5. Emits live escalation banner alert on high-risk escalation
- * 6. Generates & logs compliance audit record (generateAuditRecord)
+ * Process a single transcript chunk through the intelligence layer:
+ * Groq Extraction -> Qdrant Vector Search -> Risk Engine Decision -> Audit Assembly
  */
 export async function processTranscriptChunk(
   callId: string,
   patientId: string,
   transcriptText: string
-): Promise<void> {
-  try {
-    const patient = await getPatientById(patientId);
-    const condition = patient?.condition || 'Post-discharge follow-up';
+): Promise<{ extracted: ExtractedFields; redFlagMatch: RedFlagMatch; decision: RiskDecision }> {
+  const patient = await getPatientById(patientId);
+  const condition = patient?.condition || 'Post-discharge follow-up';
 
-    // 1. Groq LLM Field Extraction
-    const extracted = await extractFields(transcriptText, { condition });
+  // 1. Groq LLM Field Extraction
+  const extracted = await extractFields(transcriptText, { condition });
 
-    // 2. Qdrant Cloud Vector Red-Flag Match
-    const redFlagMatch = await matchRedFlag(patientId, transcriptText);
+  // 2. Qdrant Cloud Vector Red-Flag Match
+  const redFlagMatch = await matchRedFlag(patientId, transcriptText);
 
-    // 3. Deterministic Risk Engine Decision
-    const decision = decideRisk(extracted, redFlagMatch);
+  // 3. Deterministic Risk Engine Decision
+  const decision = decideRisk(extracted, redFlagMatch);
 
-    // 4. Construct & Persist Transcript Entry
-    const transcriptEntry: TranscriptEntry = {
+  // 4. Construct & Persist Transcript Entry
+  const transcriptEntry: TranscriptEntry = {
+    id: `tx-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    callId,
+    speaker: 'patient',
+    text: transcriptText,
+    timestamp: new Date().toISOString(),
+  };
+  await insertTranscriptEntry(transcriptEntry);
+
+  // Emit live transcript entry to connected web dashboard
+  getSocketManager().emitTranscriptNew(transcriptEntry);
+
+  let escalation: Escalation | undefined = undefined;
+
+  // 5. Emit Escalation Event if Risk Engine Decides Escalate
+  if (decision.action === 'escalate') {
+    escalation = {
+      id: `esc-${Date.now()}`,
+      callId,
+      patientId,
+      reason: decision.reason,
+      timestamp: new Date().toISOString(),
+      acknowledged: false,
+    };
+
+    getSocketManager().emitEscalationNew(escalation);
+  }
+
+  // 6. Generate & Format Compliance Audit Record
+  if (patient) {
+    const auditRecord = generateAuditRecord({
+      callId,
+      patient,
+      transcript: [transcriptEntry],
+      extractedFields: [extracted],
+      redFlagMatches: [redFlagMatch],
+      finalDecision: decision,
+      escalation,
+    });
+    const readableText = formatAuditRecordAsText(auditRecord);
+    console.log(`[orchestrator/audit] Generated audit record for call ${callId}:\n${readableText}`);
+  }
+
+  return { extracted, redFlagMatch, decision };
+}
+
+/**
+ * Task 2: Fallback Demo Mode Sequence Runner
+ * Feeds a scripted sequence of transcript items through the real intelligence pipeline.
+ * Emits live Socket.io events for transcript entries, call status, and risk escalations.
+ */
+export async function runDemoSequence(
+  patientId: string,
+  scenarioKey: 'routine' | 'escalation' = 'escalation'
+): Promise<{ callId: string; finalAction: string }> {
+  const scenario = DEMO_SCENARIOS[scenarioKey] || DEMO_SCENARIOS['escalation'];
+  const targetPatientId = patientId || scenario.patientId;
+  const callId = `call-demo-${scenarioKey}-${Date.now()}`;
+
+  console.log(`\n====================================================================`);
+  console.log(`[FALLBACK DEMO MODE] Running Scenario: ${scenarioKey.toUpperCase()} (Call ID: ${callId})`);
+  console.log(`[FALLBACK DEMO MODE] Target Patient ID: ${targetPatientId}`);
+  console.log(`====================================================================\n`);
+
+  const socketManager = getSocketManager();
+  socketManager.emitCallStatus(callId, 'connected');
+
+  const patient = await getPatientById(targetPatientId);
+  const allTranscripts: TranscriptEntry[] = [];
+  const allExtracted: ExtractedFields[] = [];
+  const allRedFlags: RedFlagMatch[] = [];
+  let lastDecision: RiskDecision = { action: 'log', reason: 'Routine check-in, no symptoms detected' };
+  let triggeredEscalation: Escalation | undefined = undefined;
+
+  for (const item of scenario.sequence) {
+    // Wait item delay
+    await new Promise((resolve) => setTimeout(resolve, item.delayMs));
+
+    const entry: TranscriptEntry = {
       id: `tx-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       callId,
-      speaker: 'patient',
-      text: transcriptText,
+      speaker: item.speaker,
+      text: item.text,
       timestamp: new Date().toISOString(),
     };
-    await insertTranscriptEntry(transcriptEntry);
 
-    // Emit live transcript entry to connected web dashboard
-    getSocketManager().emitTranscriptNew(transcriptEntry);
+    allTranscripts.push(entry);
+    await insertTranscriptEntry(entry);
+    socketManager.emitTranscriptNew(entry);
 
-    let escalation: Escalation | undefined = undefined;
+    if (item.speaker === 'patient') {
+      console.log(`\n[demoRunner] Processing Patient Utterance: "${item.text}"`);
 
-    // 5. Emit Escalation Event if Risk Engine Decides Escalate
-    if (decision.action === 'escalate') {
-      escalation = {
-        id: `esc-${Date.now()}`,
-        callId,
-        patientId,
-        reason: decision.reason,
-        timestamp: new Date().toISOString(),
-        acknowledged: false,
-      };
+      // Run REAL Intelligence Pipeline
+      const extracted = await extractFields(item.text, { condition: patient?.condition || '' });
+      const redFlagMatch = await matchRedFlag(targetPatientId, item.text);
+      const decision = decideRisk(extracted, redFlagMatch);
 
-      getSocketManager().emitEscalationNew(escalation);
+      allExtracted.push(extracted);
+      allRedFlags.push(redFlagMatch);
+      lastDecision = decision;
+
+      console.log(`[demoRunner] LLM Extracted     : ${JSON.stringify(extracted)}`);
+      console.log(`[demoRunner] Qdrant RedFlag     : ${JSON.stringify(redFlagMatch)}`);
+      console.log(`[demoRunner] Risk Action        : ${decision.action.toUpperCase()} (${decision.reason})`);
+
+      if (decision.action === 'escalate') {
+        triggeredEscalation = {
+          id: `esc-${Date.now()}`,
+          callId,
+          patientId: targetPatientId,
+          reason: decision.reason,
+          timestamp: new Date().toISOString(),
+          acknowledged: false,
+        };
+
+        console.log(`[demoRunner] 🚨 ESCALATING CALL! Emitting escalation:new to dashboard.`);
+        socketManager.emitEscalationNew(triggeredEscalation);
+      }
     }
-
-    // 6. Generate & Format Compliance Audit Record
-    if (patient) {
-      const auditRecord = generateAuditRecord({
-        callId,
-        patient,
-        transcript: [transcriptEntry],
-        extractedFields: [extracted],
-        redFlagMatches: [redFlagMatch],
-        finalDecision: decision,
-        escalation,
-      });
-      const readableText = formatAuditRecordAsText(auditRecord);
-      console.log(`[orchestrator/audit] Generated audit record for call ${callId}:\n${readableText}`);
-    }
-  } catch (err) {
-    console.error(`[orchestrator] Error processing transcript chunk for call ${callId}:`, err);
   }
+
+  socketManager.emitCallStatus(callId, 'ended');
+
+  // Generate & Log End-of-Call Audit Record
+  if (patient) {
+    const auditRecord = generateAuditRecord({
+      callId,
+      patient,
+      transcript: allTranscripts,
+      extractedFields: allExtracted,
+      redFlagMatches: allRedFlags,
+      finalDecision: lastDecision,
+      escalation: triggeredEscalation,
+    });
+
+    const formattedReport = formatAuditRecordAsText(auditRecord);
+    console.log(`\n====================================================================`);
+    console.log(`[DEMO COMPLETE] Compliance Audit Report for Call ${callId}:`);
+    console.log(`====================================================================`);
+    console.log(formattedReport);
+    console.log(`====================================================================\n`);
+  }
+
+  return { callId, finalAction: lastDecision.action };
 }
 
 async function bootstrap() {
@@ -110,71 +204,6 @@ async function bootstrap() {
   await gatewayBundle.start();
 
   console.log('[orchestrator] Gateway server started successfully.');
-
-  /*
-   * =========================================================================================
-   * Task 3: PHASE 3 INTEGRATION WIRING COMMENT BLOCK
-   * =========================================================================================
-   * When callStateMachine.ts emits live transcript chunks from Deepgram STT, swap out the 
-   * fake timer loop below and connect callStateMachine.ts events directly to processTranscriptChunk():
-   * 
-   * callMachine.on('transcript', async (chunkText: string) => {
-   *   await processTranscriptChunk(callId, patientId, chunkText);
-   * });
-   * =========================================================================================
-   */
-
-  /*
-   * FAKE TIMER / DEMO SIMULATION (Commented out ready to swap once callStateMachine is ready)
-   * 
-   * const FAKE_DEMO_TIMER_ENABLED = false; // Set to true to run legacy timer simulation
-   * if (FAKE_DEMO_TIMER_ENABLED) {
-   *   setTimeout(async () => {
-   *     await processTranscriptChunk(
-   *       'demo-call-101',
-   *       'patient-01',
-   *       'My chest feels tight when I try to take deep breaths'
-   *     );
-   *   }, 5000);
-   * }
-   */
-
-  // Wire live pipeline for demo patient using local test.pcm as source
-  try {
-    const telephony = new TelephonyClient();
-    telephony.startServer();
-    const stt = new STTClient();
-    const rime = new RimeClient();
-
-    const patient = await getPatientById('patient-01');
-    if (patient) {
-      const callMachine = new CallStateMachine('demo-call-1', patient, false);
-      callMachine.attachSocketManager(gatewayBundle.socketManager);
-
-      // start live call orchestration
-      callMachine.runLiveCall({ telephonyClient: telephony, sttClient: stt, rimeClient: rime }).catch((e) => {
-        console.error('[orchestrator] Demo live call failed:', e);
-      });
-
-      // stream test.pcm into telephony as simulated patient audio
-      const pcmPath = path.resolve(__dirname, '../test/test.pcm');
-      if (fs.existsSync(pcmPath)) {
-        const buf = fs.readFileSync(pcmPath);
-        const chunkSize = 4000;
-        (async () => {
-          for (let offset = 0; offset < buf.length; offset += chunkSize) {
-            const slice = buf.slice(offset, offset + chunkSize);
-            telephony.emit('audio', slice);
-            await new Promise((r) => setTimeout(r, 100));
-          }
-          // signal end
-          telephony.emit('end');
-        })();
-      }
-    }
-  } catch (e) {
-    console.warn('[orchestrator] Demo orchestration skipped:', e);
-  }
 }
 
 if (require.main === module) {

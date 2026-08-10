@@ -46,6 +46,10 @@ export class GatewayDatabase {
 
   private saveDb(): void {
     try {
+      const dir = path.dirname(this.dbPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
       fs.writeFileSync(this.dbPath, JSON.stringify(this.data, null, 2), 'utf-8');
     } catch (err) {
       console.error('[gateway/db] Failed saving DB:', err);

@@ -1,6 +1,7 @@
 import Fastify, { FastifyInstance } from 'fastify';
 import { getPatients, getPatientById, getCallById, getAllAudit, getCallsByPatientId } from './db';
 import { GatewaySocketManager } from './socket';
+import { runDemoSequence } from '../index';
 
 export interface GatewayServerBundle {
   server: FastifyInstance;
@@ -58,6 +59,49 @@ export function createGatewayServer(): GatewayServerBundle {
   server.get('/audit', async (req, reply) => {
     const auditData = await getAllAudit();
     return reply.send(auditData);
+  });
+
+  /**
+   * Task 3: REST Trigger Endpoint for Fallback Demo Mode
+   * POST /demo/run?scenario=routine|escalation&patientId=patient-01
+   * Runs the demo transcript sequence through the real intelligence pipeline (Groq -> Qdrant -> Risk Engine)
+   */
+  server.post('/demo/run', async (req, reply) => {
+    const query = (req.query as { scenario?: string; patientId?: string }) || {};
+    const body = (req.body as { scenario?: string; patientId?: string }) || {};
+
+    const scenario = (query.scenario || body.scenario || 'escalation') as 'routine' | 'escalation';
+    const patientId = query.patientId || body.patientId || (scenario === 'routine' ? 'patient-02' : 'patient-01');
+
+    // Run demo sequence asynchronously in background
+    runDemoSequence(patientId, scenario).catch((err) => {
+      console.error(`[gateway/server] Error in demo sequence run:`, err);
+    });
+
+    return reply.send({
+      success: true,
+      message: `Fallback Demo Mode started for scenario: "${scenario}" (Patient: ${patientId})`,
+      scenario,
+      patientId,
+    });
+  });
+
+  // GET helper variant for easy browser trigger testing
+  server.get('/demo/run', async (req, reply) => {
+    const query = (req.query as { scenario?: string; patientId?: string }) || {};
+    const scenario = (query.scenario || 'escalation') as 'routine' | 'escalation';
+    const patientId = query.patientId || (scenario === 'routine' ? 'patient-02' : 'patient-01');
+
+    runDemoSequence(patientId, scenario).catch((err) => {
+      console.error(`[gateway/server] Error in demo sequence run:`, err);
+    });
+
+    return reply.send({
+      success: true,
+      message: `Fallback Demo Mode started for scenario: "${scenario}" (Patient: ${patientId})`,
+      scenario,
+      patientId,
+    });
   });
 
   server.get('/test-escalate', async (req, reply) => {
