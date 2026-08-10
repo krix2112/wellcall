@@ -76,7 +76,7 @@ export async function processTranscriptChunk(
   const extracted = await extractFields(transcriptText);
 
   // 2. Qdrant Red-Flag Matching
-  const redFlagMatch = await matchRedFlag(transcriptText, patientId);
+  const redFlagMatch = await matchRedFlag(patientId, transcriptText);
 
   // 3. Risk Decision Engine
   const decision = decideRisk(extracted, redFlagMatch);
