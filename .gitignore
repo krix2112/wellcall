@@ -27,3 +27,7 @@ Thumbs.db
 
 # Turborepo
 .turbo/
+
+# Runtime DB files (local runtime/state)
+services/voice-pipeline/data/wellcall.db.json
+*.db.json
