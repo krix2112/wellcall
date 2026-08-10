@@ -14,6 +14,7 @@ export interface Patient {
   id: string;
   name: string;
   condition: string;
+  phone?: string;
   medications: Medication[];
   followUpDate: string;
   redFlagSymptoms: string[];
