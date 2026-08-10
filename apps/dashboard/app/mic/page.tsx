@@ -38,6 +38,7 @@ export default function MicInputPage() {
   const isPlayingRef = useRef(false);
   const callIdRef = useRef<string>('');
   const patientIdRef = useRef<string>(PATIENT_ID);
+  const hasConnectedOnceRef = useRef<boolean>(false);
 
   // Check if gateway is reachable
   useEffect(() => {
@@ -82,6 +83,7 @@ export default function MicInputPage() {
     setTranscript([]);
     setEscalations([]);
     setCallStatus('ringing');
+    hasConnectedOnceRef.current = false;
 
     const newCallId = `call-mic-${Date.now()}`;
     setCallId(newCallId);
@@ -111,10 +113,12 @@ export default function MicInputPage() {
         console.log('[mic] [SOCKET] connected:', socket.id);
         setCallStatus('ringing');
 
-        // If socket reconnected during an active session, re-register voice session without re-greeting
-        if (callIdRef.current) {
-          console.log('[mic] [SOCKET] Reconnected during active call, re-emitting voice:start for:', callIdRef.current);
+        // Re-emit voice:start ONLY on genuine reconnects (2nd+ connect event)
+        if (hasConnectedOnceRef.current && callIdRef.current) {
+          console.log('[mic] [SOCKET] Genuine reconnect during active call, re-emitting voice:start for:', callIdRef.current);
           socket.emit('voice:start', { patientId: patientIdRef.current, callId: callIdRef.current, isReconnect: true });
+        } else {
+          hasConnectedOnceRef.current = true;
         }
       });
 
