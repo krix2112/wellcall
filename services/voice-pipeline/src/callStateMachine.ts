@@ -6,6 +6,8 @@ import { GatewaySocketManager } from './gateway/socket';
 import { extractFields } from '@wellcall/extraction';
 import { matchRedFlag } from '@wellcall/qdrant-memory';
 import { decideRisk } from '@wellcall/risk-engine';
+import { notifyNurseSMS } from './notifyNurseSMS';
+import { generateAuditRecord, formatAuditRecordAsText } from '@wellcall/audit-report';
 
 export interface CallMachineContext {
   callId: string;
@@ -146,15 +148,18 @@ export class CallStateMachine {
 
     // start STT streaming and forward audio from telephony
     // STTClient exposes `startStream(onTranscriptChunk)` which returns a stop function.
-    const stopStreaming = await sttClient.startStream(async (text: string) => {
-      if (!text) return;
+    const stopStreaming = await sttClient.startStream(async (text: string, isFinal: boolean) => {
+      if (!text || text.trim().length === 0) return;
+      if (!isFinal) return; // Only process completed final transcript utterances
+
+      const cleanText = text.trim();
 
       // build TranscriptEntry
       const entry: TranscriptEntry = {
         id: `tr-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
         callId: this.context.callId,
         speaker: 'patient',
-        text,
+        text: cleanText,
         timestamp: new Date().toISOString(),
       };
 
@@ -162,21 +167,23 @@ export class CallStateMachine {
       await insertTranscriptEntry(entry);
       if (this.socketManager) this.socketManager.emitTranscriptNew(entry);
 
-      // extraction
-      const extracted = await extractFields(text, { condition: this.context.patient.condition });
+      // 1. Groq LLM extraction
+      const extracted = await extractFields(cleanText, { condition: this.context.patient.condition });
       console.log('[callStateMachine] extraction complete', extracted);
 
-      // red flag matching
-      const redFlag = await matchRedFlag(this.context.patient.id, extracted.symptom || '');
+      // 2. Qdrant red flag matching
+      const redFlag = await matchRedFlag(this.context.patient.id, extracted.symptom || cleanText);
       console.log('[callStateMachine] qdrant match complete', redFlag);
 
-      // risk decision
+      // 3. Risk engine decision
       const decision = decideRisk(extracted, redFlag);
       console.log('[callStateMachine] risk-engine decision', decision);
 
+      let escalation: Escalation | undefined = undefined;
+
       if (decision.action === 'escalate') {
         // create escalation record
-        const esc: Escalation = {
+        escalation = {
           id: `esc-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
           callId: this.context.callId,
           patientId: this.context.patient.id,
@@ -184,8 +191,14 @@ export class CallStateMachine {
           timestamp: new Date().toISOString(),
           acknowledged: false,
         };
-        await insertEscalation(esc);
-        if (this.socketManager) this.socketManager.emitEscalationNew(esc);
+        await insertEscalation(escalation);
+        if (this.socketManager) this.socketManager.emitEscalationNew(escalation);
+
+        try {
+          await notifyNurseSMS(escalation, this.context.patient);
+        } catch (e) {
+          console.warn('[callStateMachine] notifyNurseSMS failed', e);
+        }
 
         try {
           console.log('[callStateMachine] sending Rime escalation prompt');
@@ -194,6 +207,23 @@ export class CallStateMachine {
         } catch (e) {
           console.warn('[callStateMachine] rimeClient.speak for escalation failed', e);
         }
+      }
+
+      // 4. Generate & format compliance audit record
+      try {
+        const auditRecord = generateAuditRecord({
+          callId: this.context.callId,
+          patient: this.context.patient,
+          transcript: [entry],
+          extractedFields: [extracted],
+          redFlagMatches: [redFlag],
+          finalDecision: decision,
+          escalation,
+        });
+        const report = formatAuditRecordAsText(auditRecord);
+        console.log(`[callStateMachine/audit] Audit Report:\n${report}`);
+      } catch (e) {
+        console.warn('[callStateMachine/audit] Audit report generation warning:', e);
       }
     });
 

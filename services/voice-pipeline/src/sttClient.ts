@@ -91,140 +91,150 @@ export class STTClient {
 
     this.emitter = new EventEmitter();
 
-    const connectOnce = async (): Promise<void> => {
-      // create live connection via SDK
-      let live: any = null;
-      try {
-        live = (this.dg as any).transcription?.live?.(options);
-      } catch (e) {
-        throw new Error('[sttClient] Deepgram SDK failed to create live transcription connection: ' + String(e));
-      }
-
-      if (!live) throw new Error('[sttClient] Deepgram SDK did not return a live connection');
-
-      this.liveConnection = live;
-      this.connectionOpen = false;
-      this.finalized = false;
-
-      // attach events — SDK live connection should emit 'open','message','close','error'
-      const onOpen = () => {
-        console.log('[sttClient] Deepgram streaming session initialized (open).');
-        this.connectionOpen = true;
-        const queued = this.pendingAudioChunks.splice(0, this.pendingAudioChunks.length);
-        console.log(`[sttClient] flushing ${queued.length} buffered audio chunks`);
-        for (const pendingChunk of queued) {
-          try {
-            if (typeof this.liveConnection?.send === 'function') {
-              this.liveConnection.send(pendingChunk);
-            } else if (typeof this.liveConnection?.sendAudio === 'function') {
-              this.liveConnection.sendAudio(pendingChunk);
-            } else if (typeof this.liveConnection?.write === 'function') {
-              this.liveConnection.write(pendingChunk);
-            }
-          } catch (e) {
-            console.error('[sttClient] Failed to flush buffered audio chunk', e);
-          }
+    const connectOnce = (): Promise<void> => {
+      return new Promise((resolve, reject) => {
+        let live: any = null;
+        try {
+          live = (this.dg as any).transcription?.live?.(options);
+        } catch (e) {
+          return reject(new Error('[sttClient] Deepgram SDK failed to create live transcription connection: ' + String(e)));
         }
-      };
 
-      const onMessage = (raw: any) => {
-        // Raw payload may be string or object; ensure parsed JSON when necessary
-        let payload: any = raw;
-        if (typeof raw === 'string') {
-          try {
-            payload = JSON.parse(raw);
-          } catch (e) {
-            // sometimes SDK wraps JSON in an object with 'data'
+        if (!live) return reject(new Error('[sttClient] Deepgram SDK did not return a live connection'));
+
+        this.liveConnection = live;
+        this.connectionOpen = false;
+        this.finalized = false;
+        let isOpened = false;
+
+        const onOpen = () => {
+          console.log('[sttClient] Deepgram streaming session initialized (open).');
+          this.connectionOpen = true;
+          isOpened = true;
+          const queued = this.pendingAudioChunks.splice(0, this.pendingAudioChunks.length);
+          if (queued.length > 0) {
+            console.log(`[sttClient] flushing ${queued.length} buffered audio chunks`);
+            for (const pendingChunk of queued) {
+              try {
+                if (typeof this.liveConnection?.send === 'function') {
+                  this.liveConnection.send(pendingChunk);
+                } else if (typeof this.liveConnection?.sendAudio === 'function') {
+                  this.liveConnection.sendAudio(pendingChunk);
+                } else if (typeof this.liveConnection?.write === 'function') {
+                  this.liveConnection.write(pendingChunk);
+                }
+              } catch (e) {
+                console.error('[sttClient] Failed to flush buffered audio chunk', e);
+              }
+            }
+          }
+          resolve();
+        };
+
+        const onMessage = (raw: any) => {
+          let payload: any = raw;
+          if (typeof raw === 'string') {
             try {
-              const asStr = raw.toString();
-              payload = JSON.parse(asStr);
-            } catch (_) {
+              payload = JSON.parse(raw);
+            } catch (e) {
+              try {
+                const asStr = raw.toString();
+                payload = JSON.parse(asStr);
+              } catch (_) {
+                return;
+              }
+            }
+          } else if (Buffer.isBuffer(raw)) {
+            try {
+              payload = JSON.parse(raw.toString());
+            } catch (e) {
               return;
             }
+          } else if (raw && typeof raw === 'object' && typeof raw.data === 'string') {
+            try {
+              payload = JSON.parse(raw.data);
+            } catch (_) {
+              payload = raw;
+            }
           }
-        } else if (Buffer.isBuffer(raw)) {
+
+          let transcript = '';
+          let isFinal = false;
+
           try {
-            payload = JSON.parse(raw.toString());
+            if (payload?.channel?.alternatives && payload.channel.alternatives.length > 0) {
+              transcript = payload.channel.alternatives[0].transcript || '';
+              isFinal = Boolean(payload.is_final ?? payload.isFinal ?? false);
+            } else if (payload?.results && Array.isArray(payload.results) && payload.results[0]?.alternatives) {
+              transcript = payload.results[0].alternatives[0]?.transcript || '';
+              isFinal = Boolean(payload.results[0]?.is_final ?? false);
+            } else if (payload?.alternatives && Array.isArray(payload.alternatives)) {
+              transcript = payload.alternatives[0]?.transcript || '';
+            } else if (typeof payload?.transcript === 'string') {
+              transcript = payload.transcript;
+            }
           } catch (e) {
+            // ignore
+          }
+
+          if (transcript && transcript.trim().length > 0) {
+            console.log(`[sttClient] Received transcript (${isFinal ? 'FINAL' : 'INTERIM'}): "${transcript.trim()}"`);
+            try {
+              onTranscriptChunk(transcript.trim(), Boolean(isFinal));
+            } catch (e) {
+              console.error('[sttClient] onTranscriptChunk callback threw', e);
+            }
+          }
+        };
+
+        const onClose = (info: any) => {
+          this.connectionOpen = false;
+          if (this.finalized) {
+            console.log('[sttClient] Deepgram connection closed after finalize');
             return;
           }
-        } else if (raw && typeof raw === 'object' && typeof raw.data === 'string') {
-          try {
-            payload = JSON.parse(raw.data);
-          } catch (_) {
-            payload = raw;
+          console.warn('[sttClient] Deepgram connection closed', info);
+          if (!isOpened) {
+            reject(new Error('[sttClient] Connection closed before open: ' + JSON.stringify(info)));
+            return;
           }
-        }
+          if (this.reconnectAttempts > 0) {
+            this.reconnectAttempts -= 1;
+            console.log('[sttClient] attempting one reconnect');
+            connectOnce().catch((e) => console.error('[sttClient] reconnect failed', e));
+          } else {
+            console.error('[sttClient] no reconnects left');
+          }
+        };
 
-        // Defensive: extract transcript
-        let transcript = '';
-        let isFinal = false;
+        const onError = (err: any) => {
+          console.error('[sttClient] Deepgram connection error', err && err.message ? err.message : err);
+          if (!isOpened) {
+            reject(err);
+          }
+        };
 
         try {
-          if (payload?.channel?.alternatives && payload.channel.alternatives.length > 0) {
-            transcript = payload.channel.alternatives[0].transcript || '';
-            isFinal = Boolean(payload.is_final ?? payload.isFinal ?? false);
-          } else if (payload?.results && Array.isArray(payload.results) && payload.results[0]?.alternatives) {
-            transcript = payload.results[0].alternatives[0]?.transcript || '';
-            isFinal = Boolean(payload.results[0]?.is_final ?? false);
-          } else if (payload?.alternatives && Array.isArray(payload.alternatives)) {
-            transcript = payload.alternatives[0]?.transcript || '';
-          } else if (typeof payload?.transcript === 'string') {
-            transcript = payload.transcript;
+          if (typeof live.on === 'function') {
+            live.on('open', onOpen);
+            live.on('transcriptReceived', onMessage);
+            live.on('message', onMessage);
+            live.on('close', onClose);
+            live.on('error', onError);
+          } else if (typeof live.addEventListener === 'function') {
+            live.addEventListener('open', onOpen);
+            live.addEventListener('message', (ev: any) => onMessage(ev?.data ?? ev));
+            live.addEventListener('close', onClose);
+            live.addEventListener('error', onError);
+          } else {
+            console.warn('[sttClient] live connection has no event API');
+            resolve();
           }
         } catch (e) {
-          // ignore parsing errors
+          console.warn('[sttClient] failed attaching live handlers', e);
+          reject(e);
         }
-
-        if (transcript && transcript.trim().length > 0) {
-          try {
-            onTranscriptChunk(transcript.trim(), Boolean(isFinal));
-          } catch (e) {
-            console.error('[sttClient] onTranscriptChunk callback threw', e);
-          }
-        }
-      };
-
-      const onClose = (info: any) => {
-        this.connectionOpen = false;
-        if (this.finalized) {
-          console.log('[sttClient] Deepgram connection closed after finalize');
-          return;
-        }
-        console.warn('[sttClient] Deepgram connection closed', info);
-        if (this.reconnectAttempts > 0) {
-          this.reconnectAttempts -= 1;
-          console.log('[sttClient] attempting one reconnect');
-          // attempt reconnect
-          connectOnce().catch((e) => console.error('[sttClient] reconnect failed', e));
-        } else {
-          console.error('[sttClient] no reconnects left');
-        }
-      };
-
-      const onError = (err: any) => {
-        console.error('[sttClient] Deepgram connection error', err && err.message ? err.message : err);
-      };
-
-      // bind handlers
-      try {
-        if (typeof live.on === 'function') {
-          live.on('open', onOpen);
-          live.on('transcriptReceived', onMessage);
-          live.on('message', onMessage);
-          live.on('close', onClose);
-          live.on('error', onError);
-        } else if (typeof live.addEventListener === 'function') {
-          live.addEventListener('open', onOpen);
-          live.addEventListener('message', (ev: any) => onMessage(ev?.data ?? ev));
-          live.addEventListener('close', onClose);
-          live.addEventListener('error', onError);
-        } else {
-          console.warn('[sttClient] live connection has no event API');
-        }
-      } catch (e) {
-        console.warn('[sttClient] failed attaching live handlers', e);
-      }
+      });
     };
 
     await connectOnce();
