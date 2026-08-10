@@ -126,6 +126,27 @@ export class GatewaySocketManager {
           });
 
           this.emitCallStatus(callId, 'connected');
+
+          // Synthesize initial greeting for live voice session
+          const name = patientName?.split(' ')[0] || 'there';
+          const greetingText = `Hello ${name}, this is WellCall checking in after your discharge. How are you feeling today?`;
+          socket.emit('voice:response', { callId, text: greetingText });
+
+          const rimeApiKey = process.env.RIME_API_KEY;
+          if (rimeApiKey && rimeApiKey !== 'your_rime_api_key_here') {
+            try {
+              console.log(`[gateway/socket] [RIME] Synthesizing greeting audio for live session ${callId}: "${greetingText}"`);
+              const audioBuffer = await this.rimeClient.speak(greetingText);
+              if (audioBuffer && audioBuffer.byteLength > 0) {
+                console.log(`[gateway/socket] [RIME] Emitting greeting audio buffer (${audioBuffer.byteLength} bytes)`);
+                this.emitVoiceAudio(callId, audioBuffer);
+              } else {
+                console.warn(`[gateway/socket] [RIME] Empty audio buffer for callId ${callId}`);
+              }
+            } catch (err) {
+              console.warn(`[gateway/socket] [RIME] Greeting audio synthesis failed for callId ${callId}:`, err);
+            }
+          }
         } catch (err) {
           console.error('[gateway/socket] Failed to open Deepgram live session:', err);
         }

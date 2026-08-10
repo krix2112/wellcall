@@ -110,9 +110,6 @@ export default function MicInputPage() {
       socket.on('connect', () => {
         console.log('[mic] [SOCKET] connected:', socket.id);
         setCallStatus('ringing');
-
-        // Request greeting from gateway (Rime will synthesize and return audio)
-        socket.emit('call:start', { patientId });
       });
 
       socket.on('disconnect', (reason) => {
@@ -184,7 +181,9 @@ export default function MicInputPage() {
           ...prev,
           { id: esc.id, reason: esc.reason, timestamp: esc.timestamp },
         ]);
-        setCallStatus('ended');
+        if (esc.callId && esc.callId === callIdRef.current) {
+          setCallStatus('ended');
+        }
       });
 
       // Start the voice session — open Deepgram STT on the gateway
