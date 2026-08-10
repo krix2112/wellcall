@@ -77,6 +77,8 @@ export class STTClient {
     });
 
     live.on('transcriptReceived', (raw: any) => {
+      console.log('[sttClient] Raw event data:', typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2));
+
       let payload: any = raw;
       if (typeof raw === 'string') {
         try { payload = JSON.parse(raw); } catch { /* ignore */ }
