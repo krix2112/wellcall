@@ -14,6 +14,7 @@ import { extractFields } from '@wellcall/extraction';
 import { matchRedFlag } from '@wellcall/qdrant-memory';
 import { decideRisk } from '@wellcall/risk-engine';
 import { generateAuditRecord, formatAuditRecordAsText } from '@wellcall/audit-report';
+import { notifyNurseSMS } from './notifyNurseSMS';
 
 // Demo Script scenarios
 import { DEMO_SCENARIOS, DemoScriptItem } from './demoScript';
@@ -78,6 +79,9 @@ export async function processTranscriptChunk(
     };
 
     getSocketManager().emitEscalationNew(escalation);
+    if (patient) {
+      await notifyNurseSMS(escalation, patient);
+    }
   }
 
   // 6. Generate & Format Compliance Audit Record
@@ -170,6 +174,9 @@ export async function runDemoSequence(
 
         console.log(`[demoRunner] 🚨 ESCALATING CALL! Emitting escalation:new to dashboard.`);
         socketManager.emitEscalationNew(triggeredEscalation);
+        if (patient) {
+          await notifyNurseSMS(triggeredEscalation, patient);
+        }
       }
     }
   }
