@@ -2,7 +2,9 @@
  * Deepgram STT Client — using @deepgram/sdk@1.21.0 Deepgram constructor
  * - startStream(onTranscriptChunk) returns a stop() function
  * - sendAudioChunk(chunk) pushes raw audio into the live connection
+ * - Emits 'transcript' event on final utterances
  */
+import { EventEmitter } from 'events';
 
 type TranscriptCallback = (text: string, isFinal: boolean) => void;
 
@@ -25,7 +27,7 @@ export function getDeepgramClient(): any {
   return _deepgramClientInstance;
 }
 
-export class STTClient {
+export class STTClient extends EventEmitter {
   private sampleRate: number;
   private liveConnection: any | null = null;
   private pendingAudioChunks: Buffer[] = [];
@@ -33,6 +35,7 @@ export class STTClient {
   private finalized = false;
 
   constructor(options?: { sampleRate?: number }) {
+    super();
     this.sampleRate = options?.sampleRate ?? 16000;
   }
 
@@ -48,7 +51,7 @@ export class STTClient {
     }
   }
 
-  public async startStream(onTranscriptChunk: TranscriptCallback): Promise<() => void> {
+  public async startStream(onTranscriptChunk?: TranscriptCallback): Promise<() => void> {
     const dg = getDeepgramClient();
 
     const live = dg.transcription.live({
@@ -77,8 +80,6 @@ export class STTClient {
     });
 
     live.on('transcriptReceived', (raw: any) => {
-      console.log('[sttClient] Raw event data:', typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2));
-
       let payload: any = raw;
       if (typeof raw === 'string') {
         try { payload = JSON.parse(raw); } catch { /* ignore */ }
@@ -89,7 +90,19 @@ export class STTClient {
       const alt = payload?.channel?.alternatives?.[0];
       const text: string = (alt?.transcript ?? '').trim();
       const isFinal: boolean = payload?.is_final === true;
-      if (text) {
+
+      if (isFinal && text) {
+        console.log('[sttClient] FINAL TRANSCRIPT:', text);
+
+        // Emit 'transcript' event to orchestrator / subscribers
+        this.emit('transcript', {
+          text,
+          confidence: alt?.confidence ?? 1.0,
+          timestamp: Date.now(),
+        });
+      }
+
+      if (text && onTranscriptChunk) {
         try { onTranscriptChunk(text, isFinal); } catch { /* ignore */ }
       }
     });

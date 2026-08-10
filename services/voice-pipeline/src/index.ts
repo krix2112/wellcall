@@ -1,69 +1,63 @@
-// Load environment variables from repository root .env for both dev and built dist runs.
-// Dist runtime lives at services/voice-pipeline/dist, src at services/voice-pipeline/src —
-// in both cases the repository root is three levels up.
-import fs from 'fs';
-import path from 'path';
-const _envPath = path.resolve(__dirname, '../../..', '.env');
-if (fs.existsSync(_envPath)) {
-  const _env = fs.readFileSync(_envPath, 'utf8');
-  _env.split(/\r?\n/).forEach((line) => {
-    const m = line.match(/^\s*([^=\s]+)=(.*)$/);
-    if (!m) return;
-    const k = m[1];
-    let v = m[2] || '';
-    v = v.replace(/^"|"$/g, '');
-    if (!process.env[k]) process.env[k] = v;
-  });
-}
-import { createGatewayServer, GatewayServerBundle } from './gateway/server';
-import { insertTranscriptEntry, getPatientById, getPatients, insertEscalation } from './gateway/db';
-import { GatewaySocketManager } from './gateway/socket';
-import { TranscriptEntry, Escalation, ExtractedFields, RedFlagMatch, RiskDecision } from '@wellcall/shared-types';
-
-// Intelligence-layer workspace imports
+import { createGatewayServer } from './gateway/server';
+import {
+  Patient,
+  ExtractedFields,
+  RedFlagMatch,
+  RiskDecision,
+  Escalation,
+  TranscriptEntry,
+} from '@wellcall/shared-types';
 import { extractFields } from '@wellcall/extraction';
 import { matchRedFlag, seedRedFlags, seedPatientCarePlan } from '@wellcall/qdrant-memory';
 import { decideRisk } from '@wellcall/risk-engine';
 import { generateAuditRecord, formatAuditRecordAsText } from '@wellcall/audit-report';
 import { notifyNurseSMS } from './notifyNurseSMS';
+import {
+  getPatientById,
+  getPatients,
+  insertCall,
+  insertTranscriptEntry,
+  insertEscalation,
+} from './gateway/db';
+import { STTClient } from './sttClient';
 
-// Demo Script scenarios
-import { DEMO_SCENARIOS, DemoScriptItem } from './demoScript';
+export interface ProcessChunkResult {
+  extracted: ExtractedFields;
+  redFlagMatch: RedFlagMatch;
+  decision: RiskDecision;
+}
 
-let gatewayBundle: GatewayServerBundle | null = null;
+let gatewayBundle: ReturnType<typeof createGatewayServer> | null = null;
 
-/**
- * Singleton getter to access the live GatewaySocketManager instance
- */
-export function getSocketManager(): GatewaySocketManager {
-  if (!gatewayBundle || !gatewayBundle.socketManager) {
-    throw new Error('[orchestrator] GatewaySocketManager is not initialized yet. Call bootstrap() first.');
-  }
+function getSocketManager() {
+  if (!gatewayBundle) throw new Error('[orchestrator] Gateway bundle not initialized');
   return gatewayBundle.socketManager;
 }
 
+// Shared STTClient instance for orchestrator event listening
+export const orchestratorSTTClient = new STTClient();
+
+orchestratorSTTClient.on('transcript', async (data: { text: string; confidence?: number; timestamp?: number }) => {
+  console.log('[orchestrator] Got transcript:', data.text);
+  try {
+    const callId = `call-stt-${Date.now()}`;
+    const patientId = 'patient-01';
+    await processTranscriptChunk(callId, patientId, data.text);
+  } catch (err) {
+    console.error('[orchestrator] Error processing transcript event:', err);
+  }
+});
+
 /**
- * Process a single transcript chunk through the intelligence layer:
- * Groq Extraction -> Qdrant Vector Search -> Risk Engine Decision -> Audit Assembly
+ * Task 1: Intelligence Pipeline Execution Function
  */
 export async function processTranscriptChunk(
   callId: string,
   patientId: string,
   transcriptText: string
-): Promise<{ extracted: ExtractedFields; redFlagMatch: RedFlagMatch; decision: RiskDecision }> {
+): Promise<ProcessChunkResult> {
   const patient = await getPatientById(patientId);
-  const condition = patient?.condition || 'Post-discharge follow-up';
 
-  // 1. Groq LLM Field Extraction
-  const extracted = await extractFields(transcriptText, { condition });
-
-  // 2. Qdrant Cloud Vector Red-Flag Match
-  const redFlagMatch = await matchRedFlag(patientId, transcriptText);
-
-  // 3. Deterministic Risk Engine Decision
-  const decision = decideRisk(extracted, redFlagMatch);
-
-  // 4. Construct & Persist Transcript Entry
   const transcriptEntry: TranscriptEntry = {
     id: `tx-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     callId,
@@ -71,14 +65,25 @@ export async function processTranscriptChunk(
     text: transcriptText,
     timestamp: new Date().toISOString(),
   };
+
+  // Persist transcript entry & emit via Socket.io
   await insertTranscriptEntry(transcriptEntry);
+  if (gatewayBundle) {
+    getSocketManager().emitTranscriptNew(transcriptEntry);
+  }
 
-  // Emit live transcript entry to connected web dashboard
-  getSocketManager().emitTranscriptNew(transcriptEntry);
+  // 1. Groq LLM Extraction
+  const extracted = await extractFields(transcriptText);
 
+  // 2. Qdrant Red-Flag Matching
+  const redFlagMatch = await matchRedFlag(transcriptText, patientId);
+
+  // 3. Risk Decision Engine
+  const decision = decideRisk(extracted, redFlagMatch);
+
+  // 4. Persistence & Escalation Alert Handling
   let escalation: Escalation | undefined = undefined;
 
-  // 5. Emit Escalation Event if Risk Engine Decides Escalate
   if (decision.action === 'escalate') {
     escalation = {
       id: `esc-${Date.now()}`,
@@ -89,13 +94,16 @@ export async function processTranscriptChunk(
       acknowledged: false,
     };
 
-    getSocketManager().emitEscalationNew(escalation);
+    await insertEscalation(escalation);
+    if (gatewayBundle) {
+      getSocketManager().emitEscalationNew(escalation);
+    }
     if (patient) {
       await notifyNurseSMS(escalation, patient);
     }
   }
 
-  // 6. Generate & Format Compliance Audit Record
+  // 5. Generate & Format Compliance Audit Record
   if (patient) {
     const auditRecord = generateAuditRecord({
       callId,
@@ -115,8 +123,6 @@ export async function processTranscriptChunk(
 
 /**
  * Task 2: Fallback Demo Mode Sequence Runner
- * Feeds a scripted sequence of transcript items through the real intelligence pipeline.
- * Emits live Socket.io events for transcript entries, call status, and risk escalations.
  */
 export async function runDemoSequence(
   patientId: string,
@@ -139,10 +145,8 @@ export async function runDemoSequence(
   const allExtracted: ExtractedFields[] = [];
   const allRedFlags: RedFlagMatch[] = [];
   let lastDecision: RiskDecision = { action: 'log', reason: 'Routine check-in, no symptoms detected' };
-  let triggeredEscalation: Escalation | undefined = undefined;
 
   for (const item of scenario.sequence) {
-    // Wait item delay
     await new Promise((resolve) => setTimeout(resolve, item.delayMs));
 
     const entry: TranscriptEntry = {
@@ -158,65 +162,49 @@ export async function runDemoSequence(
     socketManager.emitTranscriptNew(entry);
 
     if (item.speaker === 'patient') {
-      console.log(`\n[demoRunner] Processing Patient Utterance: "${item.text}"`);
+      console.log(`[demoRunner] Processing Patient Utterance: "${item.text}"`);
 
-      // Run REAL Intelligence Pipeline
-      const extracted = await extractFields(item.text, { condition: patient?.condition || '' });
-      const redFlagMatch = await matchRedFlag(targetPatientId, item.text);
-      const decision = decideRisk(extracted, redFlagMatch);
+      const result = await processTranscriptChunk(callId, targetPatientId, item.text);
+      allExtracted.push(result.extracted);
+      allRedFlags.push(result.redFlagMatch);
+      lastDecision = result.decision;
 
-      allExtracted.push(extracted);
-      allRedFlags.push(redFlagMatch);
-      lastDecision = decision;
+      console.log(`[demoRunner] LLM Extracted     : ${JSON.stringify(result.extracted)}`);
+      console.log(`[demoRunner] Qdrant RedFlag     : ${JSON.stringify(result.redFlagMatch)}`);
+      console.log(`[demoRunner] Risk Action        : ${result.decision.action.toUpperCase()} (${result.decision.reason})`);
 
-      console.log(`[demoRunner] LLM Extracted     : ${JSON.stringify(extracted)}`);
-      console.log(`[demoRunner] Qdrant RedFlag     : ${JSON.stringify(redFlagMatch)}`);
-      console.log(`[demoRunner] Risk Action        : ${decision.action.toUpperCase()} (${decision.reason})`);
-
-      if (decision.action === 'escalate') {
-        triggeredEscalation = {
-          id: `esc-${Date.now()}`,
-          callId,
-          patientId: targetPatientId,
-          reason: decision.reason,
-          timestamp: new Date().toISOString(),
-          acknowledged: false,
-        };
-
+      if (result.decision.action === 'escalate') {
         console.log(`[demoRunner] Escalating call! Emitting escalation:new to dashboard.`);
-        await insertEscalation(triggeredEscalation);
-        socketManager.emitEscalationNew(triggeredEscalation);
-        if (patient) {
-          await notifyNurseSMS(triggeredEscalation, patient);
-        }
+        break;
       }
     }
   }
 
   socketManager.emitCallStatus(callId, 'ended');
 
-  // Generate & Log End-of-Call Audit Record
-  if (patient) {
-    const auditRecord = generateAuditRecord({
-      callId,
-      patient,
-      transcript: allTranscripts,
-      extractedFields: allExtracted,
-      redFlagMatches: allRedFlags,
-      finalDecision: lastDecision,
-      escalation: triggeredEscalation,
-    });
-
-    const formattedReport = formatAuditRecordAsText(auditRecord);
-    console.log(`\n====================================================================`);
-    console.log(`[DEMO COMPLETE] Compliance Audit Report for Call ${callId}:`);
-    console.log(`====================================================================`);
-    console.log(formattedReport);
-    console.log(`====================================================================\n`);
-  }
-
   return { callId, finalAction: lastDecision.action };
 }
+
+const DEMO_SCENARIOS: Record<string, { patientId: string; sequence: { speaker: 'patient' | 'system'; text: string; delayMs: number }[] }> = {
+  escalation: {
+    patientId: 'patient-01',
+    sequence: [
+      { speaker: 'system', text: 'Hello John, this is WellCall checking in after your heart surgery. How are you doing today?', delayMs: 500 },
+      { speaker: 'patient', text: 'My chest feels tight when I try to take deep breaths', delayMs: 1500 },
+      { speaker: 'system', text: 'I understand you are experiencing chest tightness. I am notifying your care team and escalating to a nurse immediately.', delayMs: 1000 },
+    ],
+  },
+  routine: {
+    patientId: 'patient-01',
+    sequence: [
+      { speaker: 'system', text: 'Hello John, this is WellCall checking in after your heart surgery. How are you doing today?', delayMs: 500 },
+      { speaker: 'patient', text: 'I feel fine, just resting at home', delayMs: 1500 },
+      { speaker: 'system', text: 'Great to hear! Have you been taking your prescribed blood thinners as instructed?', delayMs: 1000 },
+      { speaker: 'patient', text: 'Yes, I took them this morning with breakfast.', delayMs: 1500 },
+      { speaker: 'system', text: 'Wonderful. Thank you for the update. Have a restful day!', delayMs: 1000 },
+    ],
+  },
+};
 
 async function bootstrap() {
   gatewayBundle = createGatewayServer();
@@ -224,9 +212,6 @@ async function bootstrap() {
 
   console.log('[orchestrator] Gateway server started successfully.');
 
-  // Seed Qdrant red-flag vectors at startup — from synthetic patient files
-  // AND from the gateway DB's live patient records (so API data and Qdrant
-  // embeddings are consistent).
   seedRedFlags().catch((err: any) => {
     console.error('[orchestrator] Qdrant seed (synthetic) failed:', err);
   });
@@ -252,16 +237,14 @@ if (require.main === module) {
   });
 }
 
-// Graceful shutdown on Ctrl+C / termination
 process.on('SIGINT', async () => {
   console.log('[orchestrator] Received SIGINT, shutting down gracefully...');
   try {
     if (gatewayBundle && gatewayBundle.server) {
       await gatewayBundle.server.close();
-      console.log('[orchestrator] Fastify server closed');
     }
   } catch (e) {
-    console.warn('[orchestrator] Error during shutdown:', e);
+    // ignore
   }
   process.exit(0);
 });
@@ -271,10 +254,9 @@ process.on('SIGTERM', async () => {
   try {
     if (gatewayBundle && gatewayBundle.server) {
       await gatewayBundle.server.close();
-      console.log('[orchestrator] Fastify server closed');
     }
   } catch (e) {
-    console.warn('[orchestrator] Error during shutdown:', e);
+    // ignore
   }
   process.exit(0);
 });
