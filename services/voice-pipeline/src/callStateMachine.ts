@@ -58,26 +58,39 @@ export class CallStateMachine {
     return this.context.status;
   }
 
-  public async runFakeDemoSession(
+  /**
+   * Run a fake/simulated script sequence (bundled sample dialogue)
+   */
+  public async runFakeSequence(
     onTranscript: (entry: TranscriptEntry) => void
   ): Promise<TranscriptEntry[]> {
     this.ring();
-    await new Promise((r) => setTimeout(r, 500));
     this.connect();
 
-    const fakeDialogues = [
-      { speaker: 'system' as const, text: `Hello ${this.context.patient.name}, this is Wellcall checking in on your recovery.` },
-      { speaker: 'patient' as const, text: `Hello. I woke up today and my chest feels tight when I take deep breaths.` },
+    const sampleScriptPath = path.join(__dirname, '../data/sample_dialogue.json');
+    let dialogue: { speaker: 'patient' | 'system'; text: string }[] = [
+      { speaker: 'system', text: 'Hello John, this is WellCall checking in after your heart surgery. How are you doing today?' },
+      { speaker: 'patient', text: 'My chest feels tight when I try to take deep breaths' },
+      { speaker: 'system', text: 'I understand you are experiencing chest tightness. I am notifying your care team and escalating to a nurse immediately.' },
     ];
 
+    if (fs.existsSync(sampleScriptPath)) {
+      try {
+        const raw = fs.readFileSync(sampleScriptPath, 'utf-8');
+        dialogue = JSON.parse(raw);
+      } catch (e) {
+        // fallback
+      }
+    }
+
     const generated: TranscriptEntry[] = [];
-    for (const d of fakeDialogues) {
+    for (const d of dialogue) {
       const entry: TranscriptEntry = {
         id: `tr-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
         callId: this.context.callId,
-        timestamp: new Date().toISOString(),
         speaker: d.speaker,
         text: d.text,
+        timestamp: new Date().toISOString(),
       };
       this.context.transcripts.push(entry);
       generated.push(entry);
@@ -108,7 +121,6 @@ export class CallStateMachine {
     if (typeof telephonyClient.startCall === 'function') {
       session = await telephonyClient.startCall(this.context.patient.id);
     } else if (typeof telephonyClient.initiateWebRTCCall === 'function') {
-      // TelephonyClient provides a WebRTC initiation helper that returns a call id string
       const callId = await telephonyClient.initiateWebRTCCall(this.context.patient.id);
       session = {
         id: callId,
@@ -117,7 +129,6 @@ export class CallStateMachine {
         startedAt: new Date().toISOString(),
       } as CallSession;
     } else {
-      // Best-effort fallback: start the telephony server if available and synthesize a call session
       if (typeof telephonyClient.startServer === 'function') {
         telephonyClient.startServer();
       }
@@ -136,18 +147,24 @@ export class CallStateMachine {
     if (this.socketManager) this.socketManager.emitCallStatus(this.context.callId, 'connected');
 
     // speak greeting
+    const greetingText = "Hey, just calling to check in — how are you feeling today?";
     try {
       console.log('[callStateMachine] sending Rime greeting');
-      await rimeClient.speak(
-        "Hey, just calling to check in — how are you feeling today?"
-      );
+      const audioBuffer = await rimeClient.speak(greetingText);
+      if (audioBuffer && audioBuffer.byteLength > 0) {
+        console.log(`[callStateMachine] [RIME] Emitting greeting audio buffer (${audioBuffer.byteLength} bytes)`);
+        if (this.socketManager) {
+          this.socketManager.emitVoiceAudio(this.context.callId, audioBuffer);
+        }
+      } else {
+        console.warn(`[callStateMachine] [RIME] Empty audio buffer returned for callId ${this.context.callId}: "${greetingText}"`);
+      }
       console.log('[callStateMachine] Rime greeting complete');
     } catch (e) {
-      console.warn('[callStateMachine] rimeClient.speak failed', e);
+      console.warn(`[callStateMachine] [RIME] rimeClient.speak failed for callId ${this.context.callId} ("${greetingText}"):`, e);
     }
 
     // start STT streaming and forward audio from telephony
-    // STTClient exposes `startStream(onTranscriptChunk)` which returns a stop function.
     const stopStreaming = await sttClient.startStream(async (text: string, isFinal: boolean) => {
       if (!text || text.trim().length === 0) return;
       if (!isFinal) return; // Only process completed final transcript utterances
@@ -179,11 +196,9 @@ export class CallStateMachine {
       const decision = decideRisk(extracted, redFlag);
       console.log('[callStateMachine] risk-engine decision', decision);
 
-      let escalation: Escalation | undefined = undefined;
-
+      // 4. If escalated, trigger nurse notification & record
       if (decision.action === 'escalate') {
-        // create escalation record
-        escalation = {
+        const escalation: Escalation = {
           id: `esc-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
           callId: this.context.callId,
           patientId: this.context.patient.id,
@@ -191,96 +206,39 @@ export class CallStateMachine {
           timestamp: new Date().toISOString(),
           acknowledged: false,
         };
+
         await insertEscalation(escalation);
         if (this.socketManager) this.socketManager.emitEscalationNew(escalation);
-
-        try {
-          await notifyNurseSMS(escalation, this.context.patient);
-        } catch (e) {
-          console.warn('[callStateMachine] notifyNurseSMS failed', e);
-        }
-
-        try {
-          console.log('[callStateMachine] sending Rime escalation prompt');
-          await rimeClient.speak("Hmm, that sounds like something a nurse should hear about. One sec, I'm going to connect you now.");
-          console.log('[callStateMachine] Rime escalation prompt complete');
-        } catch (e) {
-          console.warn('[callStateMachine] rimeClient.speak for escalation failed', e);
-        }
+        await notifyNurseSMS(escalation, this.context.patient);
       }
 
-      // 4. Generate & format compliance audit record
-      try {
-        const auditRecord = generateAuditRecord({
-          callId: this.context.callId,
-          patient: this.context.patient,
-          transcript: [entry],
-          extractedFields: [extracted],
-          redFlagMatches: [redFlag],
-          finalDecision: decision,
-          escalation,
-        });
-        const report = formatAuditRecordAsText(auditRecord);
-        console.log(`[callStateMachine/audit] Audit Report:\n${report}`);
-      } catch (e) {
-        console.warn('[callStateMachine/audit] Audit report generation warning:', e);
-      }
+      // 5. Generate compliance audit record
+      const audit = generateAuditRecord({
+        callId: this.context.callId,
+        patient: this.context.patient,
+        transcript: this.context.transcripts,
+        extractedFields: [extracted],
+        redFlagMatches: [redFlag],
+        finalDecision: decision,
+      });
+
+      console.log('[callStateMachine] compliance audit text report:\n', formatAuditRecordAsText(audit));
     });
 
-    // forward telephony audio to sttClient until call ends
-    const audioHandler = (chunk: Buffer) => {
-      try {
-        if (typeof sttClient.sendAudioChunk === 'function') {
-          sttClient.sendAudioChunk(chunk);
-        }
-        // else: STT client may not accept raw audio chunks in this demo stub
-      } catch (e) {
-        console.error('[callStateMachine] Failed sending audio chunk to sttClient', e);
-      }
-    };
-    // attach to both direct callback and event emitter for flexibility
-    try { telephonyClient.onAudioChunk && telephonyClient.onAudioChunk(audioHandler); } catch (_) {}
-    try { telephonyClient.on && telephonyClient.on('audio', audioHandler); } catch (_) {}
-
-    // Demo audio playback: stream the bundled WAV sample only after the audio
-    // listener is attached so Deepgram receives the full file.
-    const wavPath = path.resolve(__dirname, '../test/test-rime-output.wav');
-    if (fs.existsSync(wavPath)) {
-      const wav = fs.readFileSync(wavPath);
-      const pcmStart = 44;
-      const chunkSize = 4000;
-      console.log(`[callStateMachine] streaming demo WAV audio from ${wavPath}`);
-      setTimeout(() => {
-        (async () => {
-          for (let offset = pcmStart; offset < wav.length; offset += chunkSize) {
-            const slice = wav.slice(offset, Math.min(offset + chunkSize, wav.length));
-            telephonyClient.emit('audio', slice);
-            await new Promise((r) => setTimeout(r, 100));
-          }
-          telephonyClient.emit('end');
-        })().catch((e) => console.error('[callStateMachine] demo audio stream failed', e));
-      }, 1000);
-    } else {
-      console.warn(`[callStateMachine] demo WAV sample not found at ${wavPath}`);
+    // Handle incoming telephony audio chunks -> pass to sttClient
+    if (typeof telephonyClient.on === 'function') {
+      telephonyClient.on('audio', (chunk: Buffer) => {
+        sttClient.sendAudioChunk(chunk);
+      });
     }
 
-    // wait for telephony end event (simple approach: listen for 'end' on telephonyClient if available)
-    const waitForEnd = new Promise<void>((resolve) => {
-      telephonyClient.once && telephonyClient.once('end', () => resolve());
-      // fallback: resolve when telephonyClient.endCall is called externally
-    });
-
-    await waitForEnd;
-    console.log('[callStateMachine] telephony end received, finalizing Deepgram stream');
-
-    // teardown
-    try { telephonyClient.onAudioChunk && telephonyClient.onAudioChunk(() => {}); } catch (_) {}
-    try { telephonyClient.off && telephonyClient.off('audio', audioHandler); } catch (_) {}
-    try {
-      if (typeof stopStreaming === 'function') await stopStreaming();
-    } catch (e) {}
-
-    this.hangup();
-    if (this.socketManager) this.socketManager.emitCallStatus(this.context.callId, 'ended');
+    // Hangup hook to clean up
+    if (typeof telephonyClient.on === 'function') {
+      telephonyClient.on('hangup', () => {
+        stopStreaming();
+        this.hangup();
+        if (this.socketManager) this.socketManager.emitCallStatus(this.context.callId, 'ended');
+      });
+    }
   }
 }

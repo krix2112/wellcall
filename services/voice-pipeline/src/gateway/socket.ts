@@ -171,10 +171,12 @@ export class GatewaySocketManager {
             const audioBuffer = await this.rimeClient.speak(greetingText);
             if (audioBuffer && audioBuffer.byteLength > 0) {
               console.log(`[gateway/socket] [RIME] Emitting greeting audio buffer (${audioBuffer.byteLength} bytes)`);
-              socket.emit('voice:audio', { callId, audio: audioBuffer });
+              this.emitVoiceAudio(callId, audioBuffer);
+            } else {
+              console.warn(`[gateway/socket] [RIME] Empty audio buffer returned for callId ${callId}: "${greetingText}"`);
             }
           } catch (err) {
-            console.warn('[gateway/socket] [RIME] Greeting audio synthesis failed, continuing text-only:', err);
+            console.warn(`[gateway/socket] [RIME] Greeting audio synthesis failed for callId ${callId} ("${greetingText}"):`, err);
           }
         }
 
@@ -235,10 +237,12 @@ export class GatewaySocketManager {
           const audioBuffer = await this.rimeClient.speak(responseText);
           if (audioBuffer && audioBuffer.byteLength > 0) {
             console.log(`[gateway/socket] [RIME] Emitting response audio buffer (${audioBuffer.byteLength} bytes)`);
-            socket.emit('voice:audio', { callId, audio: audioBuffer });
+            this.emitVoiceAudio(callId, audioBuffer);
+          } else {
+            console.warn(`[gateway/socket] [RIME] Empty audio buffer returned for callId ${callId}: "${responseText}"`);
           }
         } catch (err) {
-          console.warn('[gateway/socket] [RIME] Audio synthesis failed:', err);
+          console.warn(`[gateway/socket] [RIME] Audio synthesis failed for callId ${callId} ("${responseText}"):`, err);
         }
       }
 
@@ -265,5 +269,10 @@ export class GatewaySocketManager {
   public emitCallStatus(callId: string, status: CallSession['status']): void {
     console.log(`[gateway/socket] Emitting call:status -> ${callId}: ${status}`);
     this.io.emit('call:status', { callId, status });
+  }
+
+  public emitVoiceAudio(callId: string, audio: Buffer | ArrayBuffer): void {
+    console.log(`[gateway/socket] Emitting voice:audio -> ${callId} (${audio.byteLength} bytes)`);
+    this.io.emit('voice:audio', { callId, audio: audio as any });
   }
 }
