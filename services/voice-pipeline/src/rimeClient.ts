@@ -30,7 +30,7 @@ export class RimeClient {
     const doFetch = async (): Promise<Buffer> => {
       const url = 'https://users.rime.ai/v1/rime-tts';
       const body = { speaker: this.speaker, text, modelId: 'coda' };
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Accept': 'audio/wav' };
       if (this.apiKey) headers['Authorization'] = `Bearer ${this.apiKey}`;
 
       const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
