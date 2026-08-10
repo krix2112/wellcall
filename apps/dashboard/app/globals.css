@@ -1,4 +1,6 @@
-/* Plain CSS reset — no Tailwind dependency */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
   --background: #090d16;
