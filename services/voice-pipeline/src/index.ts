@@ -1,3 +1,20 @@
+// Load environment variables from repository root .env for both dev and built dist runs.
+// Dist runtime lives at services/voice-pipeline/dist, src at services/voice-pipeline/src —
+// in both cases the repository root is three levels up.
+import fs from 'fs';
+import path from 'path';
+const _envPath = path.resolve(__dirname, '../../..', '.env');
+if (fs.existsSync(_envPath)) {
+  const _env = fs.readFileSync(_envPath, 'utf8');
+  _env.split(/\r?\n/).forEach((line) => {
+    const m = line.match(/^\s*([^=\s]+)=(.*)$/);
+    if (!m) return;
+    const k = m[1];
+    let v = m[2] || '';
+    v = v.replace(/^"|"$/g, '');
+    if (!process.env[k]) process.env[k] = v;
+  });
+}
 import { createGatewayServer, GatewayServerBundle } from './gateway/server';
 import { insertTranscriptEntry, getPatientById } from './gateway/db';
 import { GatewaySocketManager } from './gateway/socket';
@@ -6,8 +23,6 @@ import { TelephonyClient } from './telephonyClient';
 import { STTClient } from './sttClient';
 import { RimeClient } from './rimeClient';
 import { CallStateMachine } from './callStateMachine';
-import fs from 'fs';
-import path from 'path';
 
 // Intelligence-layer workspace imports
 import { extractFields } from '@wellcall/extraction';
@@ -211,6 +226,55 @@ async function bootstrap() {
   await gatewayBundle.start();
 
   console.log('[orchestrator] Gateway server started successfully.');
+
+  /*
+   * =========================================================================================
+   * Task 3: PHASE 3 INTEGRATION WIRING COMMENT BLOCK
+   * =========================================================================================
+   * When callStateMachine.ts emits live transcript chunks from Deepgram STT, swap out the 
+   * fake timer loop below and connect callStateMachine.ts events directly to processTranscriptChunk():
+   * 
+   * callMachine.on('transcript', async (chunkText: string) => {
+   *   await processTranscriptChunk(callId, patientId, chunkText);
+   * });
+   * =========================================================================================
+   */
+
+  /*
+   * FAKE TIMER / DEMO SIMULATION (Commented out ready to swap once callStateMachine is ready)
+   * 
+   * const FAKE_DEMO_TIMER_ENABLED = false; // Set to true to run legacy timer simulation
+   * if (FAKE_DEMO_TIMER_ENABLED) {
+   *   setTimeout(async () => {
+   *     await processTranscriptChunk(
+   *       'demo-call-101',
+   *       'patient-01',
+   *       'My chest feels tight when I try to take deep breaths'
+   *     );
+   *   }, 5000);
+   * }
+   */
+
+  // Wire live pipeline for demo patient using local test.pcm as source
+  try {
+    const telephony = new TelephonyClient();
+    telephony.startServer();
+    const stt = new STTClient({ sampleRate: 24000 });
+    const rime = new RimeClient();
+
+    const patient = await getPatientById('patient-01');
+    if (patient) {
+      const callMachine = new CallStateMachine('demo-call-1', patient, false);
+      callMachine.attachSocketManager(gatewayBundle.socketManager);
+
+      // start live call orchestration
+      callMachine.runLiveCall({ telephonyClient: telephony, sttClient: stt, rimeClient: rime }).catch((e) => {
+        console.error('[orchestrator] Demo live call failed:', e);
+      });
+    }
+  } catch (e) {
+    console.warn('[orchestrator] Demo orchestration skipped:', e);
+  }
 }
 
 if (require.main === module) {
