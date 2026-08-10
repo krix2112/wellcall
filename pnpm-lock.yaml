@@ -71,7 +71,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared-types
       openai:
-        specifier: ^4.28.0
+        specifier: ^4.104.0
         version: 4.104.0(ws@8.21.3)
     devDependencies:
       '@types/node':
@@ -102,6 +102,12 @@ importers:
 
   services/risk-engine:
     dependencies:
+      '@wellcall/extraction':
+        specifier: workspace:*
+        version: link:../extraction
+      '@wellcall/qdrant-memory':
+        specifier: workspace:*
+        version: link:../qdrant-memory
       '@wellcall/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
