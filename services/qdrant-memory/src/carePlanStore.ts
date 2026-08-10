@@ -20,7 +20,7 @@ export async function seedPatientCarePlan(patient: Patient): Promise<void> {
   for (let i = 0; i < redFlags.length; i++) {
     const flagText = redFlags[i];
     const vector = await embedText(flagText);
-    const pointId = Math.abs(hashCode(`${patient.id}:${flagText}:${i}`)) + 1000;
+    const pointId = Math.abs(hashCode(`${patient.id}:${JSON.stringify(flagText)}:${i}`)) + 1000;
 
     points.push({
       id: pointId,
@@ -43,6 +43,10 @@ export async function seedPatientCarePlan(patient: Patient): Promise<void> {
       })),
     });
     console.log(`[carePlanStore] Successfully upserted ${points.length} points to Qdrant server.`);
+    // Also store in fallback for safety — if the search filter fails, we still have the vectors
+    const existing = fallbackPointStore.get(RED_FLAGS_COLLECTION) || [];
+    const filtered = existing.filter((p) => p.payload.patientId !== patient.id);
+    fallbackPointStore.set(RED_FLAGS_COLLECTION, [...filtered, ...points]);
   } catch {
     console.warn(`[carePlanStore] Qdrant server unreachable. Saving ${points.length} points to in-memory fallback store.`);
     const existing = fallbackPointStore.get(RED_FLAGS_COLLECTION) || [];

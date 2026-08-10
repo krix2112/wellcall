@@ -16,17 +16,13 @@ if (fs.existsSync(_envPath)) {
   });
 }
 import { createGatewayServer, GatewayServerBundle } from './gateway/server';
-import { insertTranscriptEntry, getPatientById } from './gateway/db';
+import { insertTranscriptEntry, getPatientById, getPatients, insertEscalation } from './gateway/db';
 import { GatewaySocketManager } from './gateway/socket';
 import { TranscriptEntry, Escalation, ExtractedFields, RedFlagMatch, RiskDecision } from '@wellcall/shared-types';
-import { TelephonyClient } from './telephonyClient';
-import { STTClient } from './sttClient';
-import { RimeClient } from './rimeClient';
-import { CallStateMachine } from './callStateMachine';
 
 // Intelligence-layer workspace imports
 import { extractFields } from '@wellcall/extraction';
-import { matchRedFlag } from '@wellcall/qdrant-memory';
+import { matchRedFlag, seedRedFlags, seedPatientCarePlan } from '@wellcall/qdrant-memory';
 import { decideRisk } from '@wellcall/risk-engine';
 import { generateAuditRecord, formatAuditRecordAsText } from '@wellcall/audit-report';
 import { notifyNurseSMS } from './notifyNurseSMS';
@@ -187,7 +183,8 @@ export async function runDemoSequence(
           acknowledged: false,
         };
 
-        console.log(`[demoRunner] 🚨 ESCALATING CALL! Emitting escalation:new to dashboard.`);
+        console.log(`[demoRunner] Escalating call! Emitting escalation:new to dashboard.`);
+        await insertEscalation(triggeredEscalation);
         socketManager.emitEscalationNew(triggeredEscalation);
         if (patient) {
           await notifyNurseSMS(triggeredEscalation, patient);
@@ -227,54 +224,25 @@ async function bootstrap() {
 
   console.log('[orchestrator] Gateway server started successfully.');
 
-  /*
-   * =========================================================================================
-   * Task 3: PHASE 3 INTEGRATION WIRING COMMENT BLOCK
-   * =========================================================================================
-   * When callStateMachine.ts emits live transcript chunks from Deepgram STT, swap out the 
-   * fake timer loop below and connect callStateMachine.ts events directly to processTranscriptChunk():
-   * 
-   * callMachine.on('transcript', async (chunkText: string) => {
-   *   await processTranscriptChunk(callId, patientId, chunkText);
-   * });
-   * =========================================================================================
-   */
-
-  /*
-   * FAKE TIMER / DEMO SIMULATION (Commented out ready to swap once callStateMachine is ready)
-   * 
-   * const FAKE_DEMO_TIMER_ENABLED = false; // Set to true to run legacy timer simulation
-   * if (FAKE_DEMO_TIMER_ENABLED) {
-   *   setTimeout(async () => {
-   *     await processTranscriptChunk(
-   *       'demo-call-101',
-   *       'patient-01',
-   *       'My chest feels tight when I try to take deep breaths'
-   *     );
-   *   }, 5000);
-   * }
-   */
-
-  // Wire live pipeline for demo patient using local test.pcm as source
+  // Seed Qdrant red-flag vectors at startup — from synthetic patient files
+  // AND from the gateway DB's live patient records (so API data and Qdrant
+  // embeddings are consistent).
+  seedRedFlags().catch((err) => {
+    console.error('[orchestrator] Qdrant seed (synthetic) failed:', err);
+  });
   try {
-    const telephony = new TelephonyClient();
-    telephony.startServer();
-    const stt = new STTClient({ sampleRate: 24000 });
-    const rime = new RimeClient();
-
-    const patient = await getPatientById('patient-01');
-    if (patient) {
-      const callMachine = new CallStateMachine('demo-call-1', patient, false);
-      callMachine.attachSocketManager(gatewayBundle.socketManager);
-
-      // start live call orchestration
-      callMachine.runLiveCall({ telephonyClient: telephony, sttClient: stt, rimeClient: rime }).catch((e) => {
-        console.error('[orchestrator] Demo live call failed:', e);
-      });
+    const gatewayPatients = await getPatients();
+    for (const patient of gatewayPatients) {
+      if (patient.redFlagSymptoms && patient.redFlagSymptoms.length > 0) {
+        await seedPatientCarePlan(patient);
+      }
     }
-  } catch (e) {
-    console.warn('[orchestrator] Demo orchestration skipped:', e);
+    console.log(`[orchestrator] Seeded Qdrant from ${gatewayPatients.length} gateway DB patients.`);
+  } catch (err) {
+    console.warn('[orchestrator] Failed to seed Qdrant from gateway DB:', err);
   }
+
+  console.log('[orchestrator] Gateway ready. Real patient calls are handled via Socket.io /microphone.');
 }
 
 if (require.main === module) {

@@ -3,3 +3,4 @@ export * from './embeddings';
 export * from './carePlanStore';
 export * from './redFlagMatcher';
 export * from './sessionMemory';
+export * from './seed';

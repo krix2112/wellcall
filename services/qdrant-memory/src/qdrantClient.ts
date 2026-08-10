@@ -1,6 +1,6 @@
 import { QdrantClient } from '@qdrant/js-client-rest';
 
-const QDRANT_URL = process.env.QDRANT_URL || 'http://127.0.0.1:6333';
+const QDRANT_URL = process.env.QDRANT_URL || 'http://localhost:6333';
 const QDRANT_API_KEY = process.env.QDRANT_API_KEY || undefined;
 
 export const qdrantClient = new QdrantClient({
@@ -14,7 +14,10 @@ export const qdrantClient = new QdrantClient({
  * Automatically attaches 'api-key' header when QDRANT_API_KEY is set.
  */
 export async function qdrantFetch(endpointPath: string, init?: RequestInit): Promise<Response> {
-  const url = `${QDRANT_URL}${endpointPath}`;
+  // Ensure proper REST API URL format - /points/search should not start with /
+  const normalizedPath = endpointPath.startsWith('/') ? endpointPath.slice(1) : endpointPath;
+  const url = `${QDRANT_URL}/${normalizedPath}`;
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(init?.headers as Record<string, string>),

@@ -57,51 +57,60 @@ export class GatewayDatabase {
   }
 
   /**
-   * Seed ONE fake patient row on startup if patients table is empty
-   */
-  /**
-   * Seed initial fake calls for patient-01 if calls table is empty
+   * Seed initial fake patients and demo call history if they don't already exist.
+   * Idempotent: uses upsert logic so restarting the gateway won't create duplicates.
    */
   public seedFakePatientIfEmpty(): void {
-    if (Object.keys(this.data.patients).length === 0) {
-      const seedPatient: Patient = {
-        id: 'patient-01',
-        name: 'Jane Smith (Seeded Demo)',
-        condition: 'Post-Coronary Artery Bypass Graft (CABG)',
-        medications: [
-          { name: 'Aspirin', dosage: '81mg', frequency: 'Once daily', purpose: 'Antiplatelet' },
-          { name: 'Atorvastatin', dosage: '40mg', frequency: 'At bedtime', purpose: 'Lipid control' },
-        ],
-        followUpDate: '2026-08-15',
-        redFlagSymptoms: [
-          'Sudden chest tightness or heavy sternal pressure',
-          'Shortness of breath while resting',
-          'Rapid weight gain over 3 lbs in 24 hours',
-        ],
-      };
-      this.data.patients[seedPatient.id] = seedPatient;
-      console.log('[gateway/db] Seeded initial fake patient row: patient-01');
-    }
+    // Upsert the seed patient (idempotent — won't duplicate on restart)
+    const seedPatient: Patient = {
+      id: 'patient-01',
+      name: 'Jane Smith (Seeded Demo)',
+      condition: 'Post-Coronary Artery Bypass Graft (CABG)',
+      medications: [
+        { name: 'Aspirin', dosage: '81mg', frequency: 'Once daily', purpose: 'Antiplatelet' },
+        { name: 'Atorvastatin', dosage: '40mg', frequency: 'At bedtime', purpose: 'Lipid control' },
+      ],
+      followUpDate: '2026-08-15',
+      redFlagSymptoms: [
+        'Sudden chest tightness or heavy sternal pressure',
+        'Shortness of breath while resting',
+        'Rapid weight gain over 3 lbs in 24 hours',
+      ],
+    };
+    this.data.patients[seedPatient.id] = seedPatient;
+    console.log('[gateway/db] Ensured seed patient exists: patient-01');
 
-    if (Object.keys(this.data.calls).length === 0) {
-      const demoCall1: CallSession = {
-        id: 'call-demo-101',
-        patientId: 'patient-01',
-        status: 'ended',
-        startedAt: '2026-08-09T18:11:00.000Z',
-        endedAt: '2026-08-09T18:15:30.000Z',
-      };
-      const demoCall2: CallSession = {
-        id: 'call-demo-100',
-        patientId: 'patient-01',
-        status: 'ended',
-        startedAt: '2026-08-08T09:30:00.000Z',
-        endedAt: '2026-08-08T09:33:15.000Z',
-      };
-      this.data.calls[demoCall1.id] = demoCall1;
-      this.data.calls[demoCall2.id] = demoCall2;
+    // Upsert demo calls (idempotent — won't duplicate on restart)
+    const demoCall1: CallSession = {
+      id: 'call-demo-101',
+      patientId: 'patient-01',
+      status: 'ended',
+      startedAt: '2026-08-09T18:11:00.000Z',
+      endedAt: '2026-08-09T18:15:30.000Z',
+    };
+    const demoCall2: CallSession = {
+      id: 'call-demo-100',
+      patientId: 'patient-01',
+      status: 'ended',
+      startedAt: '2026-08-08T09:30:00.000Z',
+      endedAt: '2026-08-08T09:33:15.000Z',
+    };
+    this.data.calls[demoCall1.id] = demoCall1;
+    this.data.calls[demoCall2.id] = demoCall2;
+    console.log('[gateway/db] Ensured demo call history exists for patient-01');
 
-      // Seed routine memory/outcome for call-demo-100
+    // Upsert demo escalation (idempotent)
+    const existingEscIdx = this.data.escalations.findIndex((e) => e.id === 'esc-demo-101');
+    if (existingEscIdx !== -1) {
+      this.data.escalations[existingEscIdx] = {
+        id: 'esc-demo-101',
+        callId: 'call-demo-101',
+        patientId: 'patient-01',
+        reason: "Patient's description matches a known high-risk pattern: 'Sudden chest tightness or heavy sternal pressure'",
+        timestamp: '2026-08-09T18:12:00.000Z',
+        acknowledged: false,
+      };
+    } else {
       this.data.escalations.push({
         id: 'esc-demo-101',
         callId: 'call-demo-101',
@@ -110,9 +119,8 @@ export class GatewayDatabase {
         timestamp: '2026-08-09T18:12:00.000Z',
         acknowledged: false,
       });
-
-      console.log('[gateway/db] Seeded demo call history for patient-01');
     }
+    console.log('[gateway/db] Ensured demo escalation record exists: esc-demo-101');
 
     this.saveDb();
   }

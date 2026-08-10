@@ -5,21 +5,36 @@ import { Patient } from '@wellcall/shared-types';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-async function runSeed() {
-  console.log('--- Starting Qdrant Red-Flag Seed Script ---');
+/**
+ * Programmatic entry point: seeds red-flag vectors from the synthetic patient JSON files.
+ * Used by the gateway bootstrap so the in-memory fallback store is populated at startup
+ * when the Qdrant server (Cloud or local) is unreachable.
+ */
+export async function seedRedFlags(): Promise<void> {
+  console.log('--- Starting Qdrant Red-Flag Seed ---');
 
-  // 1. Ensure collection exists
   await ensureCollection(RED_FLAGS_COLLECTION, VECTOR_SIZE);
 
-  // 2. Read synthetic patient datasets from data/synthetic-patients/
+  // Create a payload index on patientId so we can filter search queries by patient
+  try {
+    await qdrantClient.createPayloadIndex(RED_FLAGS_COLLECTION, {
+      field_name: 'patientId',
+      field_schema: 'keyword',
+    });
+    console.log(`[seedRedFlags] Created payload index on "patientId" for collection "${RED_FLAGS_COLLECTION}".`);
+  } catch (err) {
+    // Index might already exist or the server might reject duplicate creation
+    console.log(`[seedRedFlags] Payload index on "patientId" may already exist: ${err instanceof Error ? err.message : err}`);
+  }
+
   const dataDir = path.resolve(__dirname, '../../../data/synthetic-patients');
   if (!fs.existsSync(dataDir)) {
-    console.error(`Data directory not found at ${dataDir}`);
-    process.exit(1);
+    console.warn(`[seedRedFlags] Data directory not found at ${dataDir} — skipping seed.`);
+    return;
   }
 
   const files = fs.readdirSync(dataDir).filter((f) => f.endsWith('.json'));
-  console.log(`Found ${files.length} synthetic patient files in data/synthetic-patients/`);
+  console.log(`[seedRedFlags] Found ${files.length} synthetic patient files`);
 
   const patients: Patient[] = [];
   for (const file of files) {
@@ -28,34 +43,30 @@ async function runSeed() {
     patients.push(patient);
   }
 
-  // 3. Seed each patient's red flags
   for (const patient of patients) {
     await seedPatientCarePlan(patient);
   }
 
-  // 4. Verify and print points count & example payload
+  // Report where vectors landed
   try {
     const countResult = await qdrantClient.count(RED_FLAGS_COLLECTION);
-    const scrollResult = await qdrantClient.scroll(RED_FLAGS_COLLECTION, { limit: 1, with_payload: true });
-
-    console.log('\n=== Qdrant Vector Storage Verification ===');
-    console.log(`Total Points Stored in Qdrant: ${countResult.count}`);
-    if (scrollResult.points.length > 0) {
-      console.log('Example Point Payload:', JSON.stringify(scrollResult.points[0].payload, null, 2));
-    }
+    console.log(`[seedRedFlags] Total points in Qdrant server: ${countResult.count}`);
   } catch {
     const fallbackPoints = fallbackPointStore.get(RED_FLAGS_COLLECTION) || [];
-    console.log('\n=== In-Memory Fallback Storage Verification ===');
-    console.log(`Total Vector Points Stored: ${fallbackPoints.length}`);
-    if (fallbackPoints.length > 0) {
-      console.log('Example Point Payload:', JSON.stringify(fallbackPoints[0].payload, null, 2));
-    }
+    console.log(`[seedRedFlags] Using in-memory fallback store: ${fallbackPoints.length} points`);
   }
 
-  console.log('\n--- Seed Process Completed Successfully ---');
+  console.log('--- Qdrant Red-Flag Seed completed ---');
 }
 
-runSeed().catch((err) => {
-  console.error('Seed process failed:', err);
-  process.exit(1);
-});
+async function runSeed() {
+  await seedRedFlags();
+  process.exit(0);
+}
+
+if (require.main === module) {
+  runSeed().catch((err) => {
+    console.error('Seed process failed:', err);
+    process.exit(1);
+  });
+}

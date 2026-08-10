@@ -3,10 +3,16 @@ import { io, Socket } from 'socket.io-client';
 
 const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:3001';
 
+// Expose a helper for the mic page to discover the configured gateway URL
+export function getGatewayUrl(): string {
+  return GATEWAY_URL;
+}
+
 // REST Fetch Helpers
 export async function getPatients(): Promise<Patient[]> {
   try {
     const res = await fetch(`${GATEWAY_URL}/patients`);
+    if (!res.ok) return [];
     return await res.json();
   } catch {
     return [];

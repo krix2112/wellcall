@@ -91,11 +91,24 @@ export interface AuditRecord {
 }
 
 // Socket Event Payload References
+export interface VoiceAudioEvent {
+  callId: string;
+  audio: ArrayBuffer; // raw WAV binary
+}
+
+export interface VoiceResponseEvent {
+  callId: string;
+  text: string;
+  isFinal: boolean;
+}
+
 export interface ServerToClientEvents {
   'transcript:new': (entry: TranscriptEntry) => void;
   'escalation:new': (escalation: Escalation) => void;
   'call:status': (payload: { callId: string; status: CallStatus }) => void;
   'voice:transcript': (payload: { callId: string; text: string; isFinal: boolean }) => void;
+  'voice:audio': (payload: VoiceAudioEvent) => void;
+  'voice:response': (payload: VoiceResponseEvent) => void;
 }
 
 export interface ClientToServerEvents {

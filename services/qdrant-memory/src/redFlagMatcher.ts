@@ -38,7 +38,8 @@ export async function matchRedFlag(
     });
 
     if (!res.ok) {
-      throw new Error(`Qdrant search endpoint returned HTTP status ${res.status}`);
+      const errBody = await res.text();
+      throw new Error(`Qdrant search endpoint returned HTTP status ${res.status}: ${errBody}`);
     }
 
     const data = (await res.json()) as {
@@ -51,7 +52,7 @@ export async function matchRedFlag(
 
     if (!data.result || data.result.length === 0) {
       console.log(
-        `[redFlagMatcher] Patient: ${patientId} | Similarity Score: 0.0000 (Threshold: ${SIMILARITY_THRESHOLD}) | Utterance: "${spokenText}" | Matched: false (No records for patient)`
+        `[redFlagMatcher] Patient: ${patientId} | Score: 0.0000 | Utterance: "${spokenText}" | Matched: false (No records for patient)`
       );
       return {
         matched: false,

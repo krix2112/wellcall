@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Escalation } from '@wellcall/shared-types';
-import { onEscalationNew } from '../lib/apiClient';
+import { onEscalationNew, getAudit, getPatientById } from '../lib/apiClient';
 
 export interface RiskFlagBannerProps {
   patientId?: string;
@@ -14,6 +14,35 @@ export const RiskFlagBanner: React.FC<RiskFlagBannerProps> = ({
   initialEscalations = [],
 }) => {
   const [escalations, setEscalations] = useState<Escalation[]>(initialEscalations);
+
+  // Load existing escalations from audit on mount
+  useEffect(() => {
+    getAudit()
+      .then(async (data) => {
+        if (!data.escalations || data.escalations.length === 0) return;
+        // Enrich with patient names
+        const enriched = await Promise.all(
+          data.escalations.map(async (esc) => {
+            if (esc.patientId) {
+              const p = await getPatientById(esc.patientId);
+              return { ...esc, patientName: p?.name || esc.patientId } as any;
+            }
+            return esc;
+          })
+        );
+        setEscalations((prev) => {
+          const combined = [...enriched, ...prev];
+          // dedupe by id
+          const seen = new Set<string>();
+          return combined.filter((e) => {
+            if (seen.has(e.id)) return false;
+            seen.add(e.id);
+            return true;
+          });
+        });
+      })
+      .catch((err) => console.error('[RiskFlagBanner] Failed to load audit:', err));
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onEscalationNew((newEscalation: Escalation) => {

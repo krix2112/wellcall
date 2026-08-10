@@ -2,18 +2,18 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { getGatewayUrl } from '../../lib/apiClient';
 
-const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:3001';
+const GATEWAY_URL = getGatewayUrl();
 const PATIENT_ID = 'patient-01';
 
-type Status = 'idle' | 'connecting' | 'recording' | 'processing' | 'stopped';
+type CallStatus = 'idle' | 'ringing' | 'listening' | 'processing' | 'speaking' | 'ended' | 'error';
 
 interface TranscriptLine {
   id: string;
+  speaker: 'patient' | 'system' | 'system-listening' | 'system-speaking';
   text: string;
-  isFinal: boolean;
   ts: string;
-  action?: 'escalate' | 'log';
 }
 
 interface EscalationAlert {
@@ -23,7 +23,7 @@ interface EscalationAlert {
 }
 
 export default function MicInputPage() {
-  const [status, setStatus] = useState<Status>('idle');
+  const [callStatus, setCallStatus] = useState<CallStatus>('idle');
   const [callId, setCallId] = useState<string>('');
   const [transcript, setTranscript] = useState<TranscriptLine[]>([]);
   const [escalations, setEscalations] = useState<EscalationAlert[]>([]);
@@ -31,134 +31,181 @@ export default function MicInputPage() {
   const [deepgramReady, setDeepgramReady] = useState<boolean | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const audioQueueRef = useRef<AudioBuffer[]>([]);
+  const isPlayingRef = useRef(false);
   const callIdRef = useRef<string>('');
+  const patientIdRef = useRef<string>(PATIENT_ID);
 
-  // Check if Deepgram API key is configured
+  // Check if gateway is reachable
   useEffect(() => {
-    fetch(`${GATEWAY_URL}/patients/patient-01`)
+    fetch(`${GATEWAY_URL}/patients/patient-01`, { signal: AbortSignal.timeout(5000) })
       .then((r) => r.ok ? setDeepgramReady(true) : setDeepgramReady(false))
       .catch(() => setDeepgramReady(false));
   }, []);
 
-  const startRecording = useCallback(async () => {
+  const playAudioFromBuffer = useCallback((arrayBuffer: ArrayBuffer) => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    const ctx = audioContextRef.current;
+
+    ctx.decodeAudioData(arrayBuffer).then((audioBuffer) => {
+      audioQueueRef.current.push(audioBuffer);
+
+      const playNext = () => {
+        if (audioQueueRef.current.length === 0) {
+          isPlayingRef.current = false;
+          return;
+        }
+        isPlayingRef.current = true;
+        const buf = audioQueueRef.current.shift()!;
+        const source = ctx.createBufferSource();
+        source.buffer = buf;
+        source.connect(ctx.destination);
+        source.onended = playNext;
+        source.start(0);
+      };
+
+      if (!isPlayingRef.current) {
+        playNext();
+      }
+    }).catch((err) => {
+      console.error('[mic] [RIME] Failed to decode audio:', err);
+    });
+  }, []);
+
+  const startCheckin = useCallback(async () => {
     setError(null);
     setTranscript([]);
     setEscalations([]);
-    setStatus('connecting');
+    setCallStatus('ringing');
 
     const newCallId = `call-mic-${Date.now()}`;
     setCallId(newCallId);
     callIdRef.current = newCallId;
 
     try {
-      // 1. Get microphone access
+      // Select patient — for now use patient-01, but this could be a dropdown
+      const patientId = patientIdRef.current;
+
+      // Get microphone access — 16kHz mono for Deepgram linear16
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
-          sampleRate: 48000,
+          sampleRate: 16000,
           echoCancellation: true,
           noiseSuppression: true,
         },
       });
       streamRef.current = stream;
 
-      // 2. Connect Socket.io
+      // Connect Socket.io to the gateway
+      console.log('[mic] [SOCKET] connecting to gateway:', GATEWAY_URL);
       const socket = io(GATEWAY_URL, { transports: ['websocket'] });
       socketRef.current = socket;
 
       socket.on('connect', () => {
-        console.log('[mic] Socket connected, starting voice session');
+        console.log('[mic] [SOCKET] connected:', socket.id);
+        setCallStatus('ringing');
 
-        // 3. Tell gateway to open Deepgram session
-        socket.emit('voice:start', { patientId: PATIENT_ID, callId: newCallId });
-
-        // 4. Start MediaRecorder — sends webm/opus chunks every 250ms
-        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-          ? 'audio/webm;codecs=opus'
-          : MediaRecorder.isTypeSupported('audio/webm')
-          ? 'audio/webm'
-          : 'audio/ogg;codecs=opus';
-
-        const recorder = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 16000 });
-        mediaRecorderRef.current = recorder;
-
-        recorder.ondataavailable = async (e) => {
-          if (e.data.size > 0 && socketRef.current?.connected) {
-            const arrayBuf = await e.data.arrayBuffer();
-            socketRef.current.emit('voice:chunk', {
-              callId: callIdRef.current,
-              patientId: PATIENT_ID,
-              audio: arrayBuf,
-            });
-          }
-        };
-
-        recorder.start(250); // 250ms chunks
-        setStatus('recording');
+        // Request greeting from gateway (Rime will synthesize and return audio)
+        socket.emit('call:start', { patientId });
       });
 
-      // 5. Listen for live partial transcripts from Deepgram
+      socket.on('disconnect', (reason) => {
+        console.log('[mic] [SOCKET] disconnected:', reason);
+      });
+
+      socket.on('connect_error', (err) => {
+        console.error('[mic] [SOCKET] connection_error:', err.message);
+        setError(`Cannot connect to gateway: ${err.message}`);
+        setCallStatus('error');
+      });
+
+      // Listen for call status updates
+      socket.on('call:status', ({ callId: cid, status: callStatusFromGW }) => {
+        console.log('[mic] [SOCKET] call:status:', cid, callStatusFromGW);
+        if (status === 'ringing') setCallStatus('ringing');
+      });
+
+      // Listen for WellCall's voice response (text)
+      socket.on('voice:response', ({ callId: cid, text }) => {
+        console.log('[mic] [SOCKET] voice:response:', text);
+        setTranscript((prev) => [
+          ...prev,
+          { id: `sys-${Date.now()}`, speaker: 'system', text, ts: new Date().toLocaleTimeString() },
+        ]);
+        setCallStatus('speaking');
+      });
+
+      // Listen for Rime audio buffer
+      socket.on('voice:audio', ({ callId: cid, audio }) => {
+        console.log('[mic] [RIME] Received audio buffer:', audio.byteLength, 'bytes');
+        playAudioFromBuffer(audio);
+        setCallStatus('listening');
+      });
+
+      // Listen for interim/final transcripts from Deepgram
       socket.on('voice:transcript', ({ callId: cid, text, isFinal }) => {
         setTranscript((prev) => {
-          // Replace the last interim line if not final, else add new
-          const last = prev[prev.length - 1];
-          if (last && !last.isFinal) {
+          if (isFinal) {
             return [
-              ...prev.slice(0, -1),
-              { id: last.id, text, isFinal, ts: new Date().toLocaleTimeString() },
+              ...prev,
+              { id: `pt-${Date.now()}`, speaker: 'patient', text, ts: new Date().toLocaleTimeString() },
             ];
+          }
+          // Replace last interim line or add new
+          const lastIdx = prev.length - 1;
+          if (lastIdx >= 0 && prev[lastIdx].speaker === 'patient') {
+            const updated = [...prev];
+            updated[lastIdx] = { ...updated[lastIdx], text };
+            return updated;
           }
           return [
             ...prev,
-            { id: `t-${Date.now()}`, text, isFinal, ts: new Date().toLocaleTimeString() },
+            { id: `pi-${Date.now()}`, speaker: 'patient', text, ts: new Date().toLocaleTimeString() },
           ];
         });
+
+        if (isFinal) {
+          setCallStatus('processing');
+        } else {
+          setCallStatus('listening');
+        }
       });
 
-      // 6. Listen for full transcript entries (post-pipeline)
-      socket.on('transcript:new', (entry) => {
-        setTranscript((prev) => {
-          const exists = prev.some((t) => t.text === entry.text && t.isFinal);
-          if (exists) return prev;
-          return [
-            ...prev,
-            {
-              id: entry.id,
-              text: `✅ ${entry.text}`,
-              isFinal: true,
-              ts: new Date(entry.timestamp).toLocaleTimeString(),
-            },
-          ];
-        });
-      });
-
-      // 7. Listen for escalations
-      socket.on('escalation:new', (esc) => {
+      // Listen for escalations
+      socket.on('escalation:new', (esc: any) => {
+        console.log('[mic] [SOCKET] escalation:new:', esc.reason);
         setEscalations((prev) => [
           ...prev,
           { id: esc.id, reason: esc.reason, timestamp: esc.timestamp },
         ]);
+        setCallStatus('ended');
       });
 
-      socket.on('connect_error', (err) => {
-        setError(`Cannot connect to gateway: ${err.message}`);
-        setStatus('idle');
-      });
+      // Start the voice session — open Deepgram STT on the gateway
+      socket.emit('voice:start', { patientId, callId: newCallId });
+      setCallStatus('listening');
     } catch (err: any) {
       setError(err.message || 'Failed to access microphone');
-      setStatus('idle');
+      setCallStatus('error');
     }
   }, []);
 
-  const stopRecording = useCallback(() => {
-    setStatus('processing');
+  const stopCheckin = useCallback(() => {
+    setCallStatus('processing');
 
-    // Stop MediaRecorder
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
+    // Disconnect AudioContext
+    if (audioContextRef.current) {
+      try { audioContextRef.current.close(); } catch { /* ignore */ }
+      audioContextRef.current = null;
     }
+    audioQueueRef.current = [];
+    isPlayingRef.current = false;
 
     // Stop mic stream
     if (streamRef.current) {
@@ -170,32 +217,64 @@ export default function MicInputPage() {
       socketRef.current.emit('voice:stop', { callId: callIdRef.current });
       setTimeout(() => {
         socketRef.current?.disconnect();
-        setStatus('stopped');
-      }, 2000); // wait 2s for final transcripts to flush
+        setCallStatus('ended');
+      }, 3000);
     } else {
-      setStatus('stopped');
+      setCallStatus('ended');
     }
   }, []);
 
   const reset = useCallback(() => {
-    setStatus('idle');
+    setCallStatus('idle');
     setCallId('');
     setTranscript([]);
     setEscalations([]);
     setError(null);
+    socketRef.current = null;
+    streamRef.current = null;
   }, []);
 
   const hasEscalation = escalations.length > 0;
 
+  const getStatusIcon = () => {
+    switch (callStatus) {
+      case 'ringing': return '🔔';
+      case 'listening': return '🎙️';
+      case 'processing': return '🧠';
+      case 'speaking': return '🔊';
+      case 'ended': return '✅';
+      case 'error': return '⚠️';
+      default: return '📞';
+    }
+  };
+
+  const getStatusText = () => {
+    switch (callStatus) {
+      case 'ringing': return 'Connecting to WellCall...';
+      case 'listening': return 'Listening...';
+      case 'processing': return 'WellCall is analyzing your response...';
+      case 'speaking': return '🔊 WellCall is speaking...';
+      case 'ended': return 'Check-in complete';
+      case 'error': return 'Connection error';
+      default: return 'Ready to start check-in';
+    }
+  };
+
+  const isCallActive = callStatus !== 'idle' && callStatus !== 'ended' && callStatus !== 'error';
+
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '24px 0' }}>
+    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '24px 0', color: '#f8fafc' }}>
       {/* Header */}
       <div style={{ marginBottom: '32px' }}>
         <h2 style={{ margin: '0 0 8px', fontSize: '28px', fontWeight: 800, color: '#f8fafc' }}>
-          🎙️ Live Voice Check-in
+          WellCall Post-Discharge Check-in
         </h2>
         <p style={{ margin: 0, color: '#94a3b8', fontSize: '14px' }}>
-          Speak into your microphone. Wellcall will transcribe in real-time, extract clinical fields, and escalate if needed.
+          {deepgramReady === false
+            ? '⚠️ Gateway not reachable. Check that the backend is running on port 3001.'
+            : deepgramReady === true
+            ? 'A real automated voice agent will guide your post-discharge check-in.'
+            : 'Checking gateway connection...'}
         </p>
       </div>
 
@@ -207,16 +286,18 @@ export default function MicInputPage() {
           borderRadius: '12px',
           padding: '16px 20px',
           marginBottom: '24px',
-          animation: 'pulse 2s infinite',
         }}>
           <div style={{ fontSize: '18px', fontWeight: 800, color: '#fca5a5', marginBottom: '8px' }}>
-            🚨 ESCALATION TRIGGERED
+            🚨 Nurse Escalation Triggered
           </div>
           {escalations.map((e) => (
             <div key={e.id} style={{ color: '#fecaca', fontSize: '14px' }}>
               {e.reason}
             </div>
           ))}
+          <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '8px' }}>
+            A nurse will contact you shortly. The escalation has been logged and sent to your care team via SMS.
+          </div>
         </div>
       )}
 
@@ -235,12 +316,40 @@ export default function MicInputPage() {
         </div>
       )}
 
+      {/* Status Bar */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        padding: '16px 24px',
+        background: '#0f172a',
+        border: '1px solid #1e293b',
+        borderRadius: '12px',
+        marginBottom: '24px',
+      }}>
+        <span style={{ fontSize: '24px' }}>{getStatusIcon()}</span>
+        <span style={{ fontSize: '16px', fontWeight: 600, color: '#e2e8f0' }}>{getStatusText()}</span>
+        {callStatus === 'listening' && (
+          <span style={{
+            width: 12, height: 12, borderRadius: '50%',
+            background: '#10b981',
+            animation: 'pulse 1.5s infinite',
+            display: 'inline-block',
+          }} />
+        )}
+        {callId && (
+          <span style={{ fontSize: '11px', color: '#475569', fontFamily: 'monospace', marginLeft: 'auto' }}>
+            {callId}
+          </span>
+        )}
+      </div>
+
       {/* Control Buttons */}
       <div style={{ display: 'flex', gap: '12px', marginBottom: '32px', alignItems: 'center' }}>
-        {status === 'idle' || status === 'stopped' ? (
+        {!isCallActive && callStatus !== 'ended' && (
           <button
-            id="btn-start-recording"
-            onClick={status === 'stopped' ? reset : startRecording}
+            onClick={startCheckin}
+            disabled={deepgramReady === false}
             style={{
               padding: '14px 32px',
               background: 'linear-gradient(135deg, #059669, #10b981)',
@@ -249,18 +358,20 @@ export default function MicInputPage() {
               color: 'white',
               fontSize: '16px',
               fontWeight: 700,
-              cursor: 'pointer',
+              cursor: deepgramReady === false ? 'not-allowed' : 'pointer',
+              opacity: deepgramReady === false ? 0.5 : 1,
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
             }}
           >
-            {status === 'stopped' ? '🔄 New Session' : '🎙️ Start Recording'}
+            🎙️ Start Check-in
           </button>
-        ) : status === 'recording' ? (
+        )}
+
+        {isCallActive && (
           <button
-            id="btn-stop-recording"
-            onClick={stopRecording}
+            onClick={stopCheckin}
             style={{
               padding: '14px 32px',
               background: 'linear-gradient(135deg, #b91c1c, #ef4444)',
@@ -275,31 +386,29 @@ export default function MicInputPage() {
               gap: '8px',
             }}
           >
-            ⏹️ Stop Recording
+            ⏹️ End Call
           </button>
-        ) : null}
+        )}
 
-        {/* Status badge */}
-        <div style={{
-          padding: '8px 16px',
-          borderRadius: '20px',
-          fontSize: '13px',
-          fontWeight: 600,
-          background: status === 'recording' ? '#064e3b' : status === 'connecting' ? '#1e3a5f' : status === 'processing' ? '#1e1b2e' : '#1e293b',
-          color: status === 'recording' ? '#34d399' : status === 'connecting' ? '#60a5fa' : status === 'processing' ? '#a78bfa' : '#94a3b8',
-          border: `1px solid ${status === 'recording' ? '#10b981' : status === 'connecting' ? '#3b82f6' : status === 'processing' ? '#7c3aed' : '#334155'}`,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-        }}>
-          {status === 'recording' && <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', display: 'inline-block', animation: 'pulse 1s infinite' }} />}
-          {status === 'recording' ? 'Recording Live' : status === 'connecting' ? 'Connecting...' : status === 'processing' ? 'Processing...' : status === 'stopped' ? 'Session Ended' : 'Ready'}
-        </div>
-
-        {callId && (
-          <div style={{ fontSize: '11px', color: '#475569', fontFamily: 'monospace' }}>
-            {callId}
-          </div>
+        {callStatus === 'ended' && (
+          <button
+            onClick={reset}
+            style={{
+              padding: '14px 32px',
+              background: '#334155',
+              border: '1px solid #475569',
+              borderRadius: '10px',
+              color: 'white',
+              fontSize: '16px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            🔄 New Check-in
+          </button>
         )}
       </div>
 
@@ -312,65 +421,69 @@ export default function MicInputPage() {
         minHeight: '200px',
       }}>
         <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '16px' }}>
-          Live Transcript
+          Live Conversation
         </div>
 
         {transcript.length === 0 ? (
           <div style={{ color: '#334155', fontSize: '14px', textAlign: 'center', padding: '40px 0' }}>
-            {status === 'recording' ? '🎙️ Listening... speak now' : 'Transcript will appear here during the call'}
+            {callStatus === 'ringing'
+              ? '🔔 Ringing...'
+              : callStatus === 'listening'
+              ? '🎙️ Listening... speak now'
+              : callStatus === 'processing'
+              ? '🧠 Analyzing your response...'
+              : callStatus === 'speaking'
+              ? '🔊 Playing WellCall response...'
+              : 'Click Start Check-in to begin your post-discharge voice check-in.'}
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {transcript.map((line) => (
               <div key={line.id} style={{
                 display: 'flex',
                 gap: '12px',
                 alignItems: 'flex-start',
-                opacity: line.isFinal ? 1 : 0.6,
+                justifyContent: line.speaker === 'patient' ? 'flex-end' : 'flex-start',
               }}>
-                <span style={{ color: '#475569', fontSize: '11px', whiteSpace: 'nowrap', paddingTop: '2px', fontFamily: 'monospace' }}>
-                  {line.ts}
-                </span>
-                <span style={{
-                  color: line.isFinal ? '#e2e8f0' : '#94a3b8',
-                  fontSize: '15px',
-                  lineHeight: 1.5,
-                  fontStyle: line.isFinal ? 'normal' : 'italic',
+                <div style={{
+                  maxWidth: '70%',
+                  padding: '12px 16px',
+                  borderRadius: line.speaker === 'patient'
+                    ? '18px 4px 18px 18px'
+                    : '4px 18px 18px 18px',
+                  background: line.speaker === 'patient'
+                    ? 'linear-gradient(135deg, #0f172a, #1e293b)'
+                    : '#1e293b',
+                  border: line.speaker === 'patient'
+                    ? '1px solid #32d74f'
+                    : '1px solid #475569',
                 }}>
-                  {line.text}
-                </span>
+                  <div style={{
+                    fontSize: '11px',
+                    color: line.speaker === 'patient' ? '#34d399' : '#60a5fa',
+                    fontWeight: 600,
+                    marginBottom: '4px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                  }}>
+                    {line.speaker === 'patient' ? 'You' : 'WellCall'}
+                  </div>
+                  <div style={{
+                    fontSize: '15px',
+                    lineHeight: 1.5,
+                    color: '#e2e8f0',
+                  }}>
+                    {line.text}
+                  </div>
+                  <div style={{ fontSize: '10px', color: '#475569', marginTop: '4px', textAlign: 'right' }}>
+                    {line.ts}
+                  </div>
+                </div>
               </div>
             ))}
           </div>
         )}
       </div>
-
-      {/* Instructions */}
-      {status === 'idle' && (
-        <div style={{
-          marginTop: '24px',
-          padding: '16px 20px',
-          background: '#0f172a',
-          borderRadius: '10px',
-          border: '1px solid #1e293b',
-        }}>
-          <div style={{ fontWeight: 700, color: '#94a3b8', marginBottom: '10px', fontSize: '13px' }}>HOW IT WORKS</div>
-          <ol style={{ margin: 0, padding: '0 0 0 20px', color: '#64748b', fontSize: '13px', lineHeight: '2' }}>
-            <li>Click <strong style={{ color: '#10b981' }}>Start Recording</strong> and allow microphone access</li>
-            <li>Speak as a patient — e.g., <em>"My chest feels tight when I breathe"</em></li>
-            <li>Your speech is transcribed via <strong style={{ color: '#38bdf8' }}>Deepgram Nova-2</strong> in real-time</li>
-            <li>Final utterances go through <strong style={{ color: '#a78bfa' }}>Groq LLM + Qdrant</strong> risk matching</li>
-            <li>If a red flag is detected, an <strong style={{ color: '#ef4444' }}>escalation alert</strong> fires instantly</li>
-          </ol>
-        </div>
-      )}
-
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-      `}</style>
     </div>
   );
 }
