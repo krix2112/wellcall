@@ -10,7 +10,7 @@ import {
 import { processTranscriptChunk } from '../index';
 import { RimeClient } from '../rimeClient';
 import { generateWellCallResponse } from '@wellcall/extraction';
-import { getPatientById, insertCall } from './db';
+import { getPatientById, insertCall, getCallById } from './db';
 import { getDeepgramClient } from '../sttClient';
 
 // Allowed dashboard origins for CORS (browser frontend + gateway backend separation).
@@ -45,26 +45,30 @@ export class GatewaySocketManager {
         methods: ['GET', 'POST'],
       },
       maxHttpBufferSize: 1e7, // 10 MB for audio blobs
+      pingInterval: 10000,   // 10s ping interval for cloud reverse proxy stability
+      pingTimeout: 10000,    // 10s ping timeout
     });
 
     this.io.on('connection', (socket: Socket<any, any>) => {
       console.log(`[gateway/socket] Client connected: ${socket.id}`);
 
       // --- Voice Streaming: Open Deepgram STT session ---
-      socket.on('voice:start', async ({ patientId, callId }: { patientId: string; callId: string }) => {
-        console.log(`[gateway/socket] [CALL] voice:start — callId: ${callId}, patient: ${patientId}`);
+      socket.on('voice:start', async ({ patientId, callId, isReconnect }: { patientId: string; callId: string; isReconnect?: boolean }) => {
+        console.log(`[gateway/socket] [CALL] voice:start — callId: ${callId}, patient: ${patientId}, isReconnect: ${!!isReconnect}`);
 
         // Fetch patient info for context-aware responses
         const patient = await getPatientById(patientId);
         const patientName = patient?.name;
         const patientCondition = patient?.condition;
 
-        // Create call record in DB
+        // Create or update call record in DB
+        const existingCall = await getCallById(callId);
+        const isExisting = !!existingCall || !!isReconnect;
         const callSession: CallSession = {
           id: callId,
           patientId,
           status: 'connected',
-          startedAt: new Date().toISOString(),
+          startedAt: existingCall?.startedAt || new Date().toISOString(),
         };
         await insertCall(callSession);
         console.log(`[gateway/socket] [CALL] created call record: ${callId}`);
@@ -127,24 +131,26 @@ export class GatewaySocketManager {
 
           this.emitCallStatus(callId, 'connected');
 
-          // Synthesize initial greeting for live voice session
-          const name = patientName?.split(' ')[0] || 'there';
-          const greetingText = `Hello ${name}, this is WellCall checking in after your discharge. How are you feeling today?`;
-          socket.emit('voice:response', { callId, text: greetingText });
+          // Synthesize initial greeting ONLY for fresh new calls (not reconnects)
+          if (!isExisting) {
+            const name = patientName?.split(' ')[0] || 'there';
+            const greetingText = `Hello ${name}, this is WellCall checking in after your discharge. How are you feeling today?`;
+            socket.emit('voice:response', { callId, text: greetingText });
 
-          const rimeApiKey = process.env.RIME_API_KEY;
-          if (rimeApiKey && rimeApiKey !== 'your_rime_api_key_here') {
-            try {
-              console.log(`[gateway/socket] [RIME] Synthesizing greeting audio for live session ${callId}: "${greetingText}"`);
-              const audioBuffer = await this.rimeClient.speak(greetingText);
-              if (audioBuffer && audioBuffer.byteLength > 0) {
-                console.log(`[gateway/socket] [RIME] Emitting greeting audio buffer (${audioBuffer.byteLength} bytes)`);
-                this.emitVoiceAudio(callId, audioBuffer);
-              } else {
-                console.warn(`[gateway/socket] [RIME] Empty audio buffer for callId ${callId}`);
+            const rimeApiKey = process.env.RIME_API_KEY;
+            if (rimeApiKey && rimeApiKey !== 'your_rime_api_key_here') {
+              try {
+                console.log(`[gateway/socket] [RIME] Synthesizing greeting audio for live session ${callId}: "${greetingText}"`);
+                const audioBuffer = await this.rimeClient.speak(greetingText);
+                if (audioBuffer && audioBuffer.byteLength > 0) {
+                  console.log(`[gateway/socket] [RIME] Emitting greeting audio buffer (${audioBuffer.byteLength} bytes)`);
+                  this.emitVoiceAudio(callId, audioBuffer);
+                } else {
+                  console.warn(`[gateway/socket] [RIME] Empty audio buffer for callId ${callId}`);
+                }
+              } catch (err) {
+                console.warn(`[gateway/socket] [RIME] Greeting audio synthesis failed for callId ${callId}:`, err);
               }
-            } catch (err) {
-              console.warn(`[gateway/socket] [RIME] Greeting audio synthesis failed for callId ${callId}:`, err);
             }
           }
         } catch (err) {

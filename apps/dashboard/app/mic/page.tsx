@@ -104,12 +104,18 @@ export default function MicInputPage() {
 
       // Connect Socket.io to the gateway
       console.log('[mic] [SOCKET] connecting to gateway:', GATEWAY_URL);
-      const socket = io(GATEWAY_URL, { transports: ['websocket'] });
+      const socket = io(GATEWAY_URL, { transports: ['polling', 'websocket'] });
       socketRef.current = socket;
 
       socket.on('connect', () => {
         console.log('[mic] [SOCKET] connected:', socket.id);
         setCallStatus('ringing');
+
+        // If socket reconnected during an active session, re-register voice session without re-greeting
+        if (callIdRef.current) {
+          console.log('[mic] [SOCKET] Reconnected during active call, re-emitting voice:start for:', callIdRef.current);
+          socket.emit('voice:start', { patientId: patientIdRef.current, callId: callIdRef.current, isReconnect: true });
+        }
       });
 
       socket.on('disconnect', (reason) => {
