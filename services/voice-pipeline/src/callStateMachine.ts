@@ -241,8 +241,7 @@ export class CallStateMachine {
     });
 
     await waitForEnd;
-    console.log('[callStateMachine] telephony end received, waiting for Deepgram finalization');
-    await new Promise((r) => setTimeout(r, 5000));
+    console.log('[callStateMachine] telephony end received, finalizing Deepgram stream');
 
     // teardown
     try { telephonyClient.onAudioChunk && telephonyClient.onAudioChunk(() => {}); } catch (_) {}

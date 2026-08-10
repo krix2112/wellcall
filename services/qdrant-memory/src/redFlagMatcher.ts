@@ -84,7 +84,10 @@ export async function matchRedFlag(
       reason: `No red-flag pattern matched (top similarity score ${score.toFixed(4)} below threshold ${SIMILARITY_THRESHOLD})`,
     };
   } catch (err) {
-    console.warn('[redFlagMatcher] Qdrant server query failed, using fallback cosine search.', err);
+    const message = err instanceof Error ? err.message : String(err);
+    if (!message.includes('404')) {
+      console.warn('[redFlagMatcher] Qdrant server query failed, using fallback cosine search.', err);
+    }
     return matchRedFlagFallback(patientId, spokenText, spokenVector);
   }
 }

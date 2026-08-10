@@ -18,6 +18,7 @@ export class STTClient {
   private reconnectAttempts = 1;
   private pendingAudioChunks: Buffer[] = [];
   private connectionOpen = false;
+  private finalized = false;
 
   constructor(options?: { sampleRate?: number }) {
     this.apiKey = process.env.DEEPGRAM_API_KEY || '';
@@ -25,9 +26,9 @@ export class STTClient {
   }
 
   public sendAudioChunk(chunk: Buffer): void {
-    if (!this.liveConnection || !this.connectionOpen) {
+    if (!this.liveConnection || !this.connectionOpen || this.finalized) {
       this.pendingAudioChunks.push(Buffer.from(chunk));
-      console.warn('[sttClient] sendAudioChunk buffered until Deepgram connection opens');
+      console.log('[sttClient] sendAudioChunk buffered until Deepgram connection opens');
       return;
     }
 
@@ -102,12 +103,15 @@ export class STTClient {
       if (!live) throw new Error('[sttClient] Deepgram SDK did not return a live connection');
 
       this.liveConnection = live;
+      this.connectionOpen = false;
+      this.finalized = false;
 
       // attach events — SDK live connection should emit 'open','message','close','error'
       const onOpen = () => {
         console.log('[sttClient] Deepgram streaming session initialized (open).');
         this.connectionOpen = true;
         const queued = this.pendingAudioChunks.splice(0, this.pendingAudioChunks.length);
+        console.log(`[sttClient] flushing ${queued.length} buffered audio chunks`);
         for (const pendingChunk of queued) {
           try {
             if (typeof this.liveConnection?.send === 'function') {
@@ -182,8 +186,12 @@ export class STTClient {
       };
 
       const onClose = (info: any) => {
-        console.warn('[sttClient] Deepgram connection closed', info);
         this.connectionOpen = false;
+        if (this.finalized) {
+          console.log('[sttClient] Deepgram connection closed after finalize');
+          return;
+        }
+        console.warn('[sttClient] Deepgram connection closed', info);
         if (this.reconnectAttempts > 0) {
           this.reconnectAttempts -= 1;
           console.log('[sttClient] attempting one reconnect');
@@ -202,6 +210,7 @@ export class STTClient {
       try {
         if (typeof live.on === 'function') {
           live.on('open', onOpen);
+          live.on('transcriptReceived', onMessage);
           live.on('message', onMessage);
           live.on('close', onClose);
           live.on('error', onError);
@@ -223,6 +232,15 @@ export class STTClient {
     const stop = async () => {
       try {
         if (this.liveConnection) {
+          this.finalized = true;
+          if (typeof this.liveConnection.finish === 'function') {
+            this.liveConnection.finish();
+          } else if (typeof this.liveConnection.send === 'function') {
+            this.liveConnection.send(new Uint8Array(0));
+          } else if (typeof this.liveConnection.end === 'function') {
+            this.liveConnection.end();
+          }
+          await new Promise((r) => setTimeout(r, 3000));
           if (typeof this.liveConnection.close === 'function') this.liveConnection.close();
           else if (typeof this.liveConnection.end === 'function') this.liveConnection.end();
         }
@@ -230,6 +248,7 @@ export class STTClient {
         // ignore
       }
       this.liveConnection = null;
+      this.connectionOpen = false;
     };
 
     return stop;
