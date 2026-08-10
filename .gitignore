@@ -31,3 +31,10 @@ Thumbs.db
 # Runtime DB files (local runtime/state)
 services/voice-pipeline/data/wellcall.db.json
 *.db.json
+*.env.txt
+*.envv.txt
+
+# Ignore compiled JS and declaration files accidentally placed in `src/`
+**/src/*.js
+**/src/*.d.ts
+**/src/*.js.map
