@@ -11,8 +11,8 @@
     "test": "node --test dist/claudeExtractor.test.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
-    "@wellcall/shared-types": "workspace:*"
+    "@wellcall/shared-types": "workspace:*",
+    "openai": "^4.28.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
