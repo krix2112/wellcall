@@ -22,6 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
             <nav style={{ display: 'flex', gap: '24px', fontSize: '14px', fontWeight: 500 }}>
               <a href="/" style={{ color: '#38bdf8' }}>Active Patients</a>
+              <a href="/mic" style={{ color: '#34d399' }}>🎙️ Live Voice</a>
               <a href="/audit" style={{ color: '#94a3b8' }}>Audit Report</a>
             </nav>
           </div>

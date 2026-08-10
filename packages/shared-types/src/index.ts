@@ -95,9 +95,20 @@ export interface ServerToClientEvents {
   'transcript:new': (entry: TranscriptEntry) => void;
   'escalation:new': (escalation: Escalation) => void;
   'call:status': (payload: { callId: string; status: CallStatus }) => void;
+  'voice:transcript': (payload: { callId: string; text: string; isFinal: boolean }) => void;
 }
 
 export interface ClientToServerEvents {
   'call:start': (payload: { patientId: string }) => void;
   'call:hangup': (payload: { callId: string }) => void;
+  'voice:start': (payload: { patientId: string; callId: string }) => void;
+  'voice:chunk': (payload: { callId: string; patientId: string; audio: ArrayBuffer }) => void;
+  'voice:stop': (payload: { callId: string }) => void;
+}
+
+export interface VoiceTranscriptEvent {
+  callId: string;
+  patientId: string;
+  text: string;
+  isFinal: boolean;
 }
