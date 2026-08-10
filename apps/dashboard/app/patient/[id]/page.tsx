@@ -1,9 +1,11 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import LiveTranscript from '../../../components/LiveTranscript';
 import CarePlanCard from '../../../components/CarePlanCard';
 import CallHistoryTimeline from '../../../components/CallHistoryTimeline';
+import RiskFlagBanner from '../../../components/RiskFlagBanner';
 import { getPatientById } from '../../../lib/apiClient';
 import { Patient } from '@wellcall/shared-types';
 
@@ -31,40 +33,51 @@ export default function PatientPage({ params }: { params: { id: string } }) {
   }, [patientId]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <a href="/" className="text-xs text-cyan-400 hover:underline">← Back to Active Patients</a>
-          {loading ? (
-            <h2 className="text-2xl font-bold text-white mt-1">Loading patient...</h2>
-          ) : error ? (
-            <h2 className="text-2xl font-bold text-rose-400 mt-1">{error}</h2>
-          ) : (
-            <h2 className="text-2xl font-bold text-white mt-1">Patient View: {patient?.name}</h2>
-          )}
-        </div>
+    <main className="max-w-[1440px] mx-auto p-6 space-y-6">
+      {/* Navigation Breadcrumb */}
+      <div>
+        <Link href="/" className="text-xs font-semibold text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-1">
+          ← Back to Active Patients
+        </Link>
       </div>
 
+      {/* Patient Specific Risk Flag Banner */}
+      <RiskFlagBanner patientId={patientId} />
+
       {error ? (
-        <div className="bg-rose-950/40 border border-rose-800/60 p-4 rounded-lg text-rose-200">
-          {error}
+        <div className="bg-rose-950/40 border border-rose-800/60 p-4 rounded-xl text-rose-200">
+          ⚠️ {error}
         </div>
       ) : loading ? (
-        <div className="bg-slate-900 border border-slate-800 text-slate-400 rounded-xl p-5 shadow animate-pulse">
-          Loading patient data...
+        <div className="p-8 text-center text-slate-400 animate-pulse bg-slate-900/50 rounded-xl border border-slate-800">
+          Loading patient profile...
         </div>
       ) : !patient ? null : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-6">
-            <LiveTranscript />
-            <CallHistoryTimeline patientId={patientId} />
+        /* Frontend 1 Grid Layout (12-column grid: 4 cols left sidebar, 8 cols main content) */
+        <div className="grid grid-cols-12 gap-6 items-start">
+          {/* Left Column: CarePlanCard */}
+          <div className="col-span-12 lg:col-span-4 space-y-6">
+            <CarePlanCard patient={patient} />
           </div>
 
-          <div>
-            <CarePlanCard patient={patient} />
+          {/* Right Column: LiveTranscript & CallHistoryTimeline */}
+          <div className="col-span-12 lg:col-span-8 space-y-6">
+            <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow space-y-3">
+              <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+                🎙️ Live Call Communication
+              </h3>
+              <LiveTranscript />
+            </div>
+
+            <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow space-y-3">
+              <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+                📜 Cross-Call History Timeline
+              </h3>
+              <CallHistoryTimeline patientId={patientId} />
+            </div>
           </div>
         </div>
       )}
-    </div>
+    </main>
   );
 }
