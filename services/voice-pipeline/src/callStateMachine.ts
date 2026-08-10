@@ -111,7 +111,7 @@ export class CallStateMachine {
     // speak greeting
     try {
       await rimeClient.speak(
-        "Hi, this is a quick check-in on how you're recovering. How are you feeling today?"
+        "Hey, just calling to check in — how are you feeling today?"
       );
     } catch (e) {
       console.warn('[callStateMachine] rimeClient.speak failed', e);
@@ -157,7 +157,7 @@ export class CallStateMachine {
         if (this.socketManager) this.socketManager.emitEscalationNew(esc);
 
         try {
-          await rimeClient.speak('I am going to connect you with a nurse for further evaluation. Please stay on the line.');
+          await rimeClient.speak("Hmm, that sounds like something a nurse should hear about. One sec, I'm going to connect you now.");
         } catch (e) {
           console.warn('[callStateMachine] rimeClient.speak for escalation failed', e);
         }
