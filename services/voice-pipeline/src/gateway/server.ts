@@ -15,12 +15,15 @@ export function createGatewayServer(): GatewayServerBundle {
   });
 
   // Allowed dashboard origins for CORS
-  const ALLOWED_ORIGINS = [
+  const DEFAULT_ALLOWED_ORIGINS = [
     'http://localhost:3000',
     'http://127.0.0.1:3000',
     'http://localhost:3001',
     'http://127.0.0.1:3001',
   ];
+  const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
+    : DEFAULT_ALLOWED_ORIGINS;
 
   // Enable CORS for dashboard clients — reflect the request origin if it is
   // in the allow-list, otherwise fall back to the first allowed origin.

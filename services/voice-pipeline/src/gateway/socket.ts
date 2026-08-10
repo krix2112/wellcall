@@ -14,12 +14,15 @@ import { getPatientById, insertCall } from './db';
 import { getDeepgramClient } from '../sttClient';
 
 // Allowed dashboard origins for CORS (browser frontend + gateway backend separation).
-const ALLOWED_ORIGINS = [
+const DEFAULT_ALLOWED_ORIGINS = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
   'http://localhost:3001',
   'http://127.0.0.1:3001',
 ];
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
+  : DEFAULT_ALLOWED_ORIGINS;
 
 export class GatewaySocketManager {
   private io: SocketIOServer<ClientToServerEvents, ServerToClientEvents>;
