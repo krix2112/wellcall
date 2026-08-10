@@ -22,8 +22,11 @@ export function createGatewayServer(): GatewayServerBundle {
     'http://127.0.0.1:3001',
   ];
   const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
+    ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim().replace(/\/+$/, '')).filter(Boolean)
     : DEFAULT_ALLOWED_ORIGINS;
+
+  console.log('[Gateway Server] Raw ALLOWED_ORIGINS env:', process.env.ALLOWED_ORIGINS);
+  console.log('[Gateway Server] Parsed CORS ALLOWED_ORIGINS:', JSON.stringify(ALLOWED_ORIGINS));
 
   // Enable CORS for dashboard clients — reflect the request origin if it is
   // in the allow-list, otherwise fall back to the first allowed origin.
