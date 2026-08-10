@@ -14,6 +14,17 @@ export function createGatewayServer(): GatewayServerBundle {
     logger: true,
   });
 
+  // Enable CORS for dashboard clients
+  server.addHook('onRequest', async (request, reply) => {
+    reply.header('Access-Control-Allow-Origin', '*');
+    reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (request.method === 'OPTIONS') {
+      reply.status(200).send();
+      return reply;
+    }
+  });
+
   // REST Routes reading from db.ts
   server.get('/patients', async (req, reply) => {
     const patients = await getPatients();
@@ -104,30 +115,24 @@ export function createGatewayServer(): GatewayServerBundle {
     });
   });
 
-  server.get('/test-escalate', async (req, reply) => {
-    const patientId = (req.query as { patientId?: string })?.patientId || 'patient-01';
-    const fakeEscalation = {
-      id: `esc-demo-${Date.now()}`,
-      callId: 'call-demo-101',
-      patientId,
-      reason: "Patient's description matches a known high-risk pattern: 'Sudden chest tightness or heavy sternal pressure'",
-      timestamp: new Date().toISOString(),
-      acknowledged: false,
-    };
-    socketManager.emitEscalationNew(fakeEscalation);
-    return reply.send({ success: true, escalation: fakeEscalation });
-  });
+  // Socket.io initialization wrapper
+  let socketManager: GatewaySocketManager;
 
-  // Attach Socket.io to Fastify HTTP server
-  const socketManager = new GatewaySocketManager(server.server);
+  return {
+    server,
+    get socketManager() {
+      return socketManager;
+    },
+    start: async () => {
+      const port = Number(process.env.GATEWAY_PORT || process.env.PORT) || 3001;
+      const host = '0.0.0.0';
 
-  const start = async (): Promise<string> => {
-    const port = Number(process.env.GATEWAY_PORT) || 3001;
-    const host = '0.0.0.0';
-    const address = await server.listen({ port, host });
-    console.log(`[gateway/server] Fastify + Socket.io running on ${address}`);
-    return address;
+      await server.listen({ port, host });
+
+      // Attach Socket.io server instance to Fastify raw HTTP server
+      socketManager = new GatewaySocketManager(server.server);
+      console.log(`[gateway/server] Fastify + Socket.io running on http://${host}:${port}`);
+      return `http://${host}:${port}`;
+    },
   };
-
-  return { server, socketManager, start };
 }

@@ -1,4 +1,5 @@
 import React from 'react';
+import './globals.css';
 
 export const metadata = {
   title: 'Wellcall Nurse Dashboard',
@@ -8,25 +9,25 @@ export const metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased">
-        <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">📞</span>
+      <body style={{ backgroundColor: '#090d16', color: '#f8fafc', minHeight: '100vh', margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+        <header style={{ borderBottom: '1px solid #1e293b', backgroundColor: '#0f172a', padding: '16px 24px', position: 'sticky', top: 0, zIndex: 50 }}>
+          <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '24px' }}>📞</span>
               <div>
-                <h1 className="font-bold text-xl tracking-tight text-white">Wellcall</h1>
-                <p className="text-xs text-slate-400">Post-Discharge Patient Voice Check-in Gateway</p>
+                <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#ffffff' }}>Wellcall</h1>
+                <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8' }}>Post-Discharge Patient Voice Check-in Gateway</p>
               </div>
             </div>
 
-            <nav className="flex items-center gap-6 text-sm font-medium text-slate-300">
-              <a href="/" className="hover:text-cyan-400 transition-colors">Active Patients</a>
-              <a href="/audit" className="hover:text-cyan-400 transition-colors">Audit Report</a>
+            <nav style={{ display: 'flex', gap: '24px', fontSize: '14px', fontWeight: 500 }}>
+              <a href="/" style={{ color: '#38bdf8' }}>Active Patients</a>
+              <a href="/audit" style={{ color: '#94a3b8' }}>Audit Report</a>
             </nav>
           </div>
         </header>
 
-        <main className="max-w-7xl mx-auto px-6 py-8">{children}</main>
+        <main style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px 24px' }}>{children}</main>
       </body>
     </html>
   );
