@@ -1,21 +1,15 @@
 /**
- * Deepgram STT Client
- * - Uses @deepgram/sdk transcription.live() to create a live websocket-style connection
+ * Deepgram STT Client — rewritten for @deepgram/sdk v3 (createClient API)
  * - startStream(onTranscriptChunk) returns a stop() function
  * - sendAudioChunk(chunk) pushes raw audio into the live connection
  */
-import EventEmitter from 'events';
-import querystring from 'querystring';
 
 type TranscriptCallback = (text: string, isFinal: boolean) => void;
 
 export class STTClient {
   private apiKey: string;
   private sampleRate: number;
-  private dg: any | null = null;
   private liveConnection: any | null = null;
-  private emitter: EventEmitter | null = null;
-  private reconnectAttempts = 1;
   private pendingAudioChunks: Buffer[] = [];
   private connectionOpen = false;
   private finalized = false;
@@ -28,21 +22,10 @@ export class STTClient {
   public sendAudioChunk(chunk: Buffer): void {
     if (!this.liveConnection || !this.connectionOpen || this.finalized) {
       this.pendingAudioChunks.push(Buffer.from(chunk));
-      console.log('[sttClient] sendAudioChunk buffered until Deepgram connection opens');
       return;
     }
-
     try {
-      if (typeof this.liveConnection.send === 'function') {
-        this.liveConnection.send(chunk);
-      } else if (typeof this.liveConnection.sendAudio === 'function') {
-        this.liveConnection.sendAudio(chunk);
-      } else if (typeof this.liveConnection.write === 'function') {
-        // some SDKs expose a write
-        this.liveConnection.write(chunk);
-      } else {
-        console.warn('[sttClient] liveConnection has no send/sendAudio/write method');
-      }
+      this.liveConnection.send(chunk);
     } catch (e) {
       console.error('[sttClient] Failed to send audio chunk', e);
     }
@@ -53,210 +36,58 @@ export class STTClient {
       throw new Error('[sttClient] DEEPGRAM_API_KEY not set in environment');
     }
 
-    // Load SDK dynamically to avoid hard dependency at build-time errors
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const sdk = require('@deepgram/sdk');
-      this.dg = sdk && sdk.Deepgram ? new sdk.Deepgram(this.apiKey) : null;
-    } catch (e) {
-      throw new Error('[sttClient] @deepgram/sdk is required but not installed');
-    }
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { createClient, LiveTranscriptionEvents } = require('@deepgram/sdk');
+    const client = createClient(this.apiKey);
 
-    if (!this.dg) throw new Error('[sttClient] Failed to initialize Deepgram SDK');
-
-    const keyterms = [
-      'chest pain',
-      'shortness of breath',
-      'fever',
-      'dizziness',
-      'swelling',
-      'nausea',
-      'medication',
-      'incision',
-    ];
-
-    const options: any = {
-      model: 'nova-3',
+    const live = client.listen.live({
+      model: 'nova-2',
       encoding: 'linear16',
       sample_rate: this.sampleRate,
       channels: 1,
       language: 'en-US',
       interim_results: true,
       smart_format: true,
-      keyterm: keyterms,
-    };
+      utterance_end_ms: 1500,
+      vad_events: true,
+    });
 
-    const debugUrl = `wss://api.deepgram.com/v1/listen?${querystring.stringify(options)}`;
-    console.log('[sttClient] Deepgram live URL:', debugUrl);
+    this.liveConnection = live;
+    this.connectionOpen = false;
+    this.finalized = false;
 
-    this.emitter = new EventEmitter();
-
-    const connectOnce = (): Promise<void> => {
-      return new Promise((resolve, reject) => {
-        let live: any = null;
-        try {
-          live = (this.dg as any).transcription?.live?.(options);
-        } catch (e) {
-          return reject(new Error('[sttClient] Deepgram SDK failed to create live transcription connection: ' + String(e)));
-        }
-
-        if (!live) return reject(new Error('[sttClient] Deepgram SDK did not return a live connection'));
-
-        this.liveConnection = live;
-        this.connectionOpen = false;
-        this.finalized = false;
-        let isOpened = false;
-
-        const onOpen = () => {
-          console.log('[sttClient] Deepgram streaming session initialized (open).');
-          this.connectionOpen = true;
-          isOpened = true;
-          const queued = this.pendingAudioChunks.splice(0, this.pendingAudioChunks.length);
-          if (queued.length > 0) {
-            console.log(`[sttClient] flushing ${queued.length} buffered audio chunks`);
-            for (const pendingChunk of queued) {
-              try {
-                if (typeof this.liveConnection?.send === 'function') {
-                  this.liveConnection.send(pendingChunk);
-                } else if (typeof this.liveConnection?.sendAudio === 'function') {
-                  this.liveConnection.sendAudio(pendingChunk);
-                } else if (typeof this.liveConnection?.write === 'function') {
-                  this.liveConnection.write(pendingChunk);
-                }
-              } catch (e) {
-                console.error('[sttClient] Failed to flush buffered audio chunk', e);
-              }
-            }
-          }
-          resolve();
-        };
-
-        const onMessage = (raw: any) => {
-          let payload: any = raw;
-          if (typeof raw === 'string') {
-            try {
-              payload = JSON.parse(raw);
-            } catch (e) {
-              try {
-                const asStr = raw.toString();
-                payload = JSON.parse(asStr);
-              } catch (_) {
-                return;
-              }
-            }
-          } else if (Buffer.isBuffer(raw)) {
-            try {
-              payload = JSON.parse(raw.toString());
-            } catch (e) {
-              return;
-            }
-          } else if (raw && typeof raw === 'object' && typeof raw.data === 'string') {
-            try {
-              payload = JSON.parse(raw.data);
-            } catch (_) {
-              payload = raw;
-            }
-          }
-
-          let transcript = '';
-          let isFinal = false;
-
-          try {
-            if (payload?.channel?.alternatives && payload.channel.alternatives.length > 0) {
-              transcript = payload.channel.alternatives[0].transcript || '';
-              isFinal = Boolean(payload.is_final ?? payload.isFinal ?? false);
-            } else if (payload?.results && Array.isArray(payload.results) && payload.results[0]?.alternatives) {
-              transcript = payload.results[0].alternatives[0]?.transcript || '';
-              isFinal = Boolean(payload.results[0]?.is_final ?? false);
-            } else if (payload?.alternatives && Array.isArray(payload.alternatives)) {
-              transcript = payload.alternatives[0]?.transcript || '';
-            } else if (typeof payload?.transcript === 'string') {
-              transcript = payload.transcript;
-            }
-          } catch (e) {
-            // ignore
-          }
-
-          if (transcript && transcript.trim().length > 0) {
-            console.log(`[sttClient] Received transcript (${isFinal ? 'FINAL' : 'INTERIM'}): "${transcript.trim()}"`);
-            try {
-              onTranscriptChunk(transcript.trim(), Boolean(isFinal));
-            } catch (e) {
-              console.error('[sttClient] onTranscriptChunk callback threw', e);
-            }
-          }
-        };
-
-        const onClose = (info: any) => {
-          this.connectionOpen = false;
-          if (this.finalized) {
-            console.log('[sttClient] Deepgram connection closed after finalize');
-            return;
-          }
-          console.warn('[sttClient] Deepgram connection closed', info);
-          if (!isOpened) {
-            reject(new Error('[sttClient] Connection closed before open: ' + JSON.stringify(info)));
-            return;
-          }
-          if (this.reconnectAttempts > 0) {
-            this.reconnectAttempts -= 1;
-            console.log('[sttClient] attempting one reconnect');
-            connectOnce().catch((e) => console.error('[sttClient] reconnect failed', e));
-          } else {
-            console.error('[sttClient] no reconnects left');
-          }
-        };
-
-        const onError = (err: any) => {
-          console.error('[sttClient] Deepgram connection error', err && err.message ? err.message : err);
-          if (!isOpened) {
-            reject(err);
-          }
-        };
-
-        try {
-          if (typeof live.on === 'function') {
-            live.on('open', onOpen);
-            live.on('transcriptReceived', onMessage);
-            live.on('message', onMessage);
-            live.on('close', onClose);
-            live.on('error', onError);
-          } else if (typeof live.addEventListener === 'function') {
-            live.addEventListener('open', onOpen);
-            live.addEventListener('message', (ev: any) => onMessage(ev?.data ?? ev));
-            live.addEventListener('close', onClose);
-            live.addEventListener('error', onError);
-          } else {
-            console.warn('[sttClient] live connection has no event API');
-            resolve();
-          }
-        } catch (e) {
-          console.warn('[sttClient] failed attaching live handlers', e);
-          reject(e);
-        }
-      });
-    };
-
-    await connectOnce();
-
-    const stop = async () => {
-      try {
-        if (this.liveConnection) {
-          this.finalized = true;
-          if (typeof this.liveConnection.finish === 'function') {
-            this.liveConnection.finish();
-          } else if (typeof this.liveConnection.send === 'function') {
-            this.liveConnection.send(new Uint8Array(0));
-          } else if (typeof this.liveConnection.end === 'function') {
-            this.liveConnection.end();
-          }
-          await new Promise((r) => setTimeout(r, 3000));
-          if (typeof this.liveConnection.close === 'function') this.liveConnection.close();
-          else if (typeof this.liveConnection.end === 'function') this.liveConnection.end();
-        }
-      } catch (e) {
-        // ignore
+    live.on(LiveTranscriptionEvents.Open, () => {
+      console.log('[sttClient] Deepgram streaming session open.');
+      this.connectionOpen = true;
+      // Flush any audio buffered before open
+      const queued = this.pendingAudioChunks.splice(0);
+      for (const buf of queued) {
+        try { live.send(buf); } catch { /* ignore */ }
       }
+    });
+
+    live.on(LiveTranscriptionEvents.Transcript, (data: any) => {
+      const alt = data?.channel?.alternatives?.[0];
+      const text: string = (alt?.transcript ?? '').trim();
+      const isFinal: boolean = data.is_final === true;
+      if (text) {
+        try { onTranscriptChunk(text, isFinal); } catch { /* ignore */ }
+      }
+    });
+
+    live.on(LiveTranscriptionEvents.Error, (err: any) => {
+      console.error('[sttClient] Deepgram error:', err?.message ?? err);
+    });
+
+    live.on(LiveTranscriptionEvents.Close, () => {
+      console.log('[sttClient] Deepgram connection closed.');
+      this.connectionOpen = false;
+    });
+
+    const stop = () => {
+      if (this.finalized) return;
+      this.finalized = true;
+      try { live.finish(); } catch { /* ignore */ }
       this.liveConnection = null;
       this.connectionOpen = false;
     };
