@@ -20069,6 +20069,286 @@
       "speaker": "system",
       "text": "Hello, this is Wellcall checking in on your recovery.",
       "timestamp": "2026-08-10T10:15:10.427Z"
+    },
+    {
+      "id": "tr-fake-1786356915429-818",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-10T10:15:15.429Z"
+    },
+    {
+      "id": "tr-fake-1786356920434-819",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-10T10:15:20.434Z"
+    },
+    {
+      "id": "tr-fake-1786356925441-820",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-10T10:15:25.441Z"
+    },
+    {
+      "id": "tr-fake-1786356930456-821",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-10T10:15:30.456Z"
+    },
+    {
+      "id": "tr-fake-1786356935460-822",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-10T10:15:35.460Z"
+    },
+    {
+      "id": "tr-fake-1786356940472-823",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-10T10:15:40.472Z"
+    },
+    {
+      "id": "tr-fake-1786356945481-824",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-10T10:15:45.481Z"
+    },
+    {
+      "id": "tr-fake-1786356950488-825",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-10T10:15:50.488Z"
+    },
+    {
+      "id": "tr-fake-1786356955499-826",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-10T10:15:55.499Z"
+    },
+    {
+      "id": "tr-fake-1786356960500-827",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-10T10:16:00.500Z"
+    },
+    {
+      "id": "tr-fake-1786356965506-828",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-10T10:16:05.506Z"
+    },
+    {
+      "id": "tr-fake-1786356970520-829",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-10T10:16:10.520Z"
+    },
+    {
+      "id": "tr-fake-1786356975522-830",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-10T10:16:15.522Z"
+    },
+    {
+      "id": "tr-fake-1786356980529-831",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-10T10:16:20.529Z"
+    },
+    {
+      "id": "tr-fake-1786356985540-832",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-10T10:16:25.540Z"
+    },
+    {
+      "id": "tr-fake-1786356990543-833",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-10T10:16:30.543Z"
+    },
+    {
+      "id": "tr-fake-1786356995557-834",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-10T10:16:35.557Z"
+    },
+    {
+      "id": "tr-fake-1786357000560-835",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-10T10:16:40.560Z"
+    },
+    {
+      "id": "tr-fake-1786357005560-836",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-10T10:16:45.560Z"
+    },
+    {
+      "id": "tr-fake-1786357010564-837",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-10T10:16:50.564Z"
+    },
+    {
+      "id": "tr-fake-1786357015572-838",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-10T10:16:55.572Z"
+    },
+    {
+      "id": "tr-fake-1786357020576-839",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-10T10:17:00.576Z"
+    },
+    {
+      "id": "tr-fake-1786357025589-840",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-10T10:17:05.589Z"
+    },
+    {
+      "id": "tr-fake-1786357030597-841",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-10T10:17:10.597Z"
+    },
+    {
+      "id": "tr-fake-1786357035597-842",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-10T10:17:15.597Z"
+    },
+    {
+      "id": "tr-fake-1786357040633-843",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-10T10:17:20.633Z"
+    },
+    {
+      "id": "tr-fake-1786357045643-844",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-10T10:17:25.643Z"
+    },
+    {
+      "id": "tr-fake-1786357050648-845",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-10T10:17:30.648Z"
+    },
+    {
+      "id": "tr-fake-1786357055648-846",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-10T10:17:35.648Z"
+    },
+    {
+      "id": "tr-fake-1786357060649-847",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-10T10:17:40.649Z"
+    },
+    {
+      "id": "tr-fake-1786357065653-848",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-10T10:17:45.653Z"
+    },
+    {
+      "id": "tr-fake-1786357070660-849",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-10T10:17:50.660Z"
+    },
+    {
+      "id": "tr-fake-1786357075666-850",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-10T10:17:55.666Z"
+    },
+    {
+      "id": "tr-fake-1786357080676-851",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-10T10:18:00.676Z"
+    },
+    {
+      "id": "tr-fake-1786357085679-852",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-10T10:18:05.679Z"
+    },
+    {
+      "id": "tr-fake-1786357090684-853",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-10T10:18:10.684Z"
+    },
+    {
+      "id": "tr-fake-1786357095700-854",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-10T10:18:15.700Z"
+    },
+    {
+      "id": "tr-fake-1786357100705-855",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-10T10:18:20.705Z"
+    },
+    {
+      "id": "tr-fake-1786357105709-856",
+      "callId": "call-demo-101",
+      "speaker": "patient",
+      "text": "My chest feels tight when I try to take deep breaths.",
+      "timestamp": "2026-08-10T10:18:25.709Z"
+    },
+    {
+      "id": "tr-fake-1786357110712-857",
+      "callId": "call-demo-101",
+      "speaker": "system",
+      "text": "Hello, this is Wellcall checking in on your recovery.",
+      "timestamp": "2026-08-10T10:18:30.712Z"
     }
   ],
   "escalations": [

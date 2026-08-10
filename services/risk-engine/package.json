@@ -11,6 +11,8 @@
     "test": "tsc && node --test dist/riskDecision.test.js"
   },
   "dependencies": {
+    "@wellcall/extraction": "workspace:*",
+    "@wellcall/qdrant-memory": "workspace:*",
     "@wellcall/shared-types": "workspace:*"
   },
   "devDependencies": {
