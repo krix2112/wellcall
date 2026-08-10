@@ -3,7 +3,7 @@ import { createGatewayServer, GatewayServerBundle } from './gateway/server';
 import { insertTranscriptEntry } from './gateway/db';
 import { GatewaySocketManager } from './gateway/socket';
 import { TranscriptEntry } from '@wellcall/shared-types';
-import TelephonyClient from './telephonyClient';
+import { TelephonyClient } from './telephonyClient';
 import { STTClient } from './sttClient';
 import { RimeClient } from './rimeClient';
 import { CallStateMachine } from './callStateMachine';
