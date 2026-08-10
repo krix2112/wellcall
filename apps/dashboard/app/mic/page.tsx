@@ -104,6 +104,28 @@ export default function MicInputPage() {
       });
       streamRef.current = stream;
 
+      // Set up Web Audio API PCM processor to stream audio chunks to gateway
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+      audioContextRef.current = audioCtx;
+
+      const source = audioCtx.createMediaStreamSource(stream);
+      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+      processorRef.current = processor;
+
+      processor.onaudioprocess = (e) => {
+        if (!socketRef.current || !socketRef.current.connected || !callIdRef.current) return;
+        const inputData = e.inputBuffer.getChannelData(0);
+        const pcm16 = new Int16Array(inputData.length);
+        for (let i = 0; i < inputData.length; i++) {
+          const s = Math.max(-1, Math.min(1, inputData[i]));
+          pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        }
+        socketRef.current.emit('voice:chunk', { callId: callIdRef.current, audio: pcm16.buffer });
+      };
+
+      source.connect(processor);
+      processor.connect(audioCtx.destination);
+
       // Connect Socket.io to the gateway
       console.log('[mic] [SOCKET] connecting to gateway:', GATEWAY_URL);
       const socket = io(GATEWAY_URL, { transports: ['polling', 'websocket'] });
