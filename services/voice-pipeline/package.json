@@ -18,7 +18,8 @@
     "@wellcall/risk-engine": "workspace:*",
     "@wellcall/audit-report": "workspace:*",
     "fastify": "^4.26.0",
-    "socket.io": "^4.7.4"
+    "socket.io": "^4.7.4",
+    "twilio": "^5.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
