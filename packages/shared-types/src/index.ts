@@ -107,6 +107,7 @@ export interface VoiceResponseEvent {
 export interface ServerToClientEvents {
   'transcript:new': (entry: TranscriptEntry) => void;
   'escalation:new': (escalation: Escalation) => void;
+  'escalation:acknowledged': (payload: { id: string }) => void;
   'call:status': (payload: { callId: string; status: CallStatus }) => void;
   'voice:transcript': (payload: { callId: string; text: string; isFinal: boolean }) => void;
   'voice:audio': (payload: VoiceAudioEvent) => void;

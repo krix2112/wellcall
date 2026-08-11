@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Escalation } from '@wellcall/shared-types';
-import { onEscalationNew, getAudit, getPatientById } from '../lib/apiClient';
+import { onEscalationNew, onEscalationAcknowledged, acknowledgeEscalationApi, getAudit, getPatientById } from '../lib/apiClient';
 
 export interface RiskFlagBannerProps {
   patientId?: string;
@@ -67,10 +67,22 @@ export const RiskFlagBanner: React.FC<RiskFlagBannerProps> = ({
     };
   }, [patientId]);
 
-  const handleAcknowledge = (id: string) => {
+  // Listen for global escalation:acknowledged events
+  useEffect(() => {
+    const unsubscribe = onEscalationAcknowledged(({ id }) => {
+      console.log('[RiskFlagBanner] Received escalation:acknowledged event:', id);
+      setEscalations((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, acknowledged: true } : item))
+      );
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleAcknowledge = async (id: string) => {
     setEscalations((prev) =>
       prev.map((item) => (item.id === id ? { ...item, acknowledged: true } : item))
     );
+    await acknowledgeEscalationApi(id);
   };
 
   if (escalations.length === 0) {

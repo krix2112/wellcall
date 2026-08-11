@@ -92,12 +92,20 @@ export function onEscalationNew(callback: (escalation: Escalation) => void): () 
   };
 }
 
-export function onCallStatus(
-  callback: (payload: { callId: string; status: CallSession['status'] }) => void
-): () => void {
+export async function acknowledgeEscalationApi(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${GATEWAY_URL}/audit/${id}/acknowledge`, { method: 'POST' });
+    return res.ok;
+  } catch (err) {
+    console.error('[apiClient] Failed to acknowledge escalation:', err);
+    return false;
+  }
+}
+
+export function onEscalationAcknowledged(callback: (payload: { id: string }) => void): () => void {
   const s = getSocket();
-  s.on('call:status', callback);
+  s.on('escalation:acknowledged' as any, callback);
   return () => {
-    s.off('call:status', callback);
+    s.off('escalation:acknowledged' as any, callback);
   };
 }

@@ -1,5 +1,5 @@
 import Fastify, { FastifyInstance } from 'fastify';
-import { getPatients, getPatientById, getCallById, getAllAudit, getCallsByPatientId } from './db';
+import { getPatients, getPatientById, getCallById, getAllAudit, getCallsByPatientId, acknowledgeEscalation } from './db';
 import { GatewaySocketManager } from './socket';
 import { runDemoSequence } from '../index';
 
@@ -88,6 +88,18 @@ export function createGatewayServer(): GatewayServerBundle {
   server.get('/audit', async (req, reply) => {
     const auditData = await getAllAudit();
     return reply.send(auditData);
+  });
+
+  server.post('/audit/:id/acknowledge', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const success = await acknowledgeEscalation(id);
+    if (!success) {
+      return reply.status(404).send({ error: 'Escalation record not found' });
+    }
+    if (socketManager) {
+      socketManager.emitEscalationAcknowledged(id);
+    }
+    return reply.send({ success: true, id, acknowledged: true });
   });
 
   /**

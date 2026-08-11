@@ -169,6 +169,16 @@ export class GatewayDatabase {
     this.saveDb();
   }
 
+  public async acknowledgeEscalation(id: string): Promise<boolean> {
+    const item = this.data.escalations.find((e) => e.id === id);
+    if (item) {
+      item.acknowledged = true;
+      this.saveDb();
+      return true;
+    }
+    return false;
+  }
+
   public async getAllAudit(): Promise<{ escalations: Escalation[]; calls: CallSession[] }> {
     return {
       escalations: [...this.data.escalations],
@@ -187,4 +197,5 @@ export const getCallById = db.getCallById.bind(db);
 export const getCallsByPatientId = db.getCallsByPatientId.bind(db);
 export const insertTranscriptEntry = db.insertTranscriptEntry.bind(db);
 export const insertEscalation = db.insertEscalation.bind(db);
+export const acknowledgeEscalation = db.acknowledgeEscalation.bind(db);
 export const getAllAudit = db.getAllAudit.bind(db);

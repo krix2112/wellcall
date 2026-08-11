@@ -339,6 +339,11 @@ export class GatewaySocketManager {
     this.io.emit('escalation:new', escalation);
   }
 
+  public emitEscalationAcknowledged(id: string): void {
+    console.log(`[gateway/socket] Emitting escalation:acknowledged -> ${id}`);
+    this.io.emit('escalation:acknowledged' as any, { id });
+  }
+
   public emitCallStatus(callId: string, status: CallSession['status']): void {
     console.log(`[gateway/socket] Emitting call:status -> ${callId}: ${status}`);
     this.io.emit('call:status', { callId, status });

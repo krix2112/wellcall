@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { getAudit, getPatientById, onEscalationNew } from '../../lib/apiClient';
+import { getAudit, getPatientById, onEscalationNew, onEscalationAcknowledged, acknowledgeEscalationApi } from '../../lib/apiClient';
 import { Escalation } from '@wellcall/shared-types';
 
 export default function AuditPage() {
@@ -49,6 +49,27 @@ export default function AuditPage() {
     });
     return () => unsubscribe();
   }, []);
+
+  // Listen for global escalation:acknowledged events
+  useEffect(() => {
+    const unsubscribe = onEscalationAcknowledged(({ id }) => {
+      setEscalations((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, acknowledged: true } : item))
+      );
+      setSelectedRecord((prev) => (prev && prev.id === id ? { ...prev, acknowledged: true } : prev));
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleAcknowledge = async (id: string) => {
+    setEscalations((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, acknowledged: true } : item))
+    );
+    if (selectedRecord && selectedRecord.id === id) {
+      setSelectedRecord((prev) => (prev ? { ...prev, acknowledged: true } : null));
+    }
+    await acknowledgeEscalationApi(id);
+  };
 
   const filteredEscalations = escalations.filter((esc) => {
     const matchesFilter =
@@ -178,15 +199,17 @@ export default function AuditPage() {
                     <td className="p-4 text-slate-300 max-w-md truncate">{esc.reason}</td>
                     <td className="p-4 text-slate-400">{new Date(esc.timestamp).toLocaleString()}</td>
                     <td className="p-4 text-right">
-                      <span
-                        className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
+                      <button
+                        disabled={esc.acknowledged}
+                        onClick={(e) => { e.stopPropagation(); handleAcknowledge(esc.id); }}
+                        className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
                           esc.acknowledged
-                            ? 'bg-slate-800 text-slate-300 border-slate-700'
-                            : 'bg-rose-950 text-rose-300 border-rose-800 animate-pulse'
+                            ? 'bg-slate-800 text-slate-300 border-slate-700 cursor-default'
+                            : 'bg-rose-950 text-rose-300 border-rose-800 animate-pulse hover:bg-rose-900 cursor-pointer'
                         }`}
                       >
-                        {esc.acknowledged ? '✓ Acknowledged' : '🚨 Escalated'}
-                      </span>
+                        {esc.acknowledged ? '✓ Acknowledged' : '🚨 Click to Acknowledge'}
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -241,7 +264,20 @@ export default function AuditPage() {
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-800">
+            <div className="pt-4 border-t border-slate-800 space-y-2">
+              {!selectedRecord.acknowledged && (
+                <button
+                  onClick={() => handleAcknowledge(selectedRecord.id)}
+                  className="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 rounded-lg text-xs transition-colors"
+                >
+                  ✓ Acknowledge Escalation
+                </button>
+              )}
+              {selectedRecord.acknowledged && (
+                <div className="w-full text-center text-emerald-400 font-semibold text-xs py-2">
+                  ✓ Acknowledged
+                </div>
+              )}
               <button
                 onClick={() => setSelectedRecord(null)}
                 className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 py-2 rounded-lg font-semibold text-xs"
