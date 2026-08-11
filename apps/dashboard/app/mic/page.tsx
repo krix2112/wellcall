@@ -2,10 +2,10 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { getGatewayUrl } from '../../lib/apiClient';
+import { getGatewayUrl, getPatients } from '../../lib/apiClient';
 
 const GATEWAY_URL = getGatewayUrl();
-const PATIENT_ID = 'patient-01';
+const DEFAULT_PATIENT_ID = 'patient-01';
 
 type CallStatus = 'idle' | 'ringing' | 'listening' | 'processing' | 'speaking' | 'ended' | 'error';
 
@@ -29,6 +29,8 @@ export default function MicInputPage() {
   const [escalations, setEscalations] = useState<EscalationAlert[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [deepgramReady, setDeepgramReady] = useState<boolean | null>(null);
+  const [patients, setPatients] = useState<{ id: string; name: string }[]>([]);
+  const [selectedPatientId, setSelectedPatientId] = useState<string>(DEFAULT_PATIENT_ID);
 
   const socketRef = useRef<Socket | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -38,8 +40,15 @@ export default function MicInputPage() {
   const activeSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const isPlayingRef = useRef(false);
   const callIdRef = useRef<string>('');
-  const patientIdRef = useRef<string>(PATIENT_ID);
+  const patientIdRef = useRef<string>(DEFAULT_PATIENT_ID);
   const hasConnectedOnceRef = useRef<boolean>(false);
+
+  // Fetch patient list for picker on mount
+  useEffect(() => {
+    getPatients().then((list) => {
+      if (list.length > 0) setPatients(list);
+    });
+  }, []);
 
   const stopAudioPlayback = useCallback(() => {
     if (activeSourceRef.current) {
@@ -391,6 +400,55 @@ export default function MicInputPage() {
           <span style={{ fontSize: '11px', color: '#475569', fontFamily: 'monospace', marginLeft: 'auto' }}>
             {callId}
           </span>
+        )}
+      </div>
+
+      {/* Patient Picker */}
+      <div style={{ marginBottom: '20px' }}>
+        <label
+          htmlFor="patient-picker"
+          style={{
+            display: 'block', fontSize: '11px', fontWeight: 700, color: '#64748b',
+            textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px',
+          }}
+        >
+          Patient
+        </label>
+        <select
+          id="patient-picker"
+          disabled={callStatus !== 'idle'}
+          value={selectedPatientId}
+          onChange={(e) => {
+            setSelectedPatientId(e.target.value);
+            patientIdRef.current = e.target.value;
+          }}
+          style={{
+            width: '100%',
+            padding: '10px 14px',
+            background: callStatus !== 'idle' ? '#0d1626' : '#0f172a',
+            border: '1px solid #1e293b',
+            borderRadius: '8px',
+            color: callStatus !== 'idle' ? '#475569' : '#e2e8f0',
+            fontSize: '14px',
+            fontWeight: 500,
+            cursor: callStatus !== 'idle' ? 'not-allowed' : 'pointer',
+            opacity: callStatus !== 'idle' ? 0.6 : 1,
+          }}
+        >
+          {patients.length === 0 ? (
+            <option value={DEFAULT_PATIENT_ID}>patient-01 (loading...)</option>
+          ) : (
+            patients.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name.replace(' (SYNTHETIC)', '')} — {p.id}
+              </option>
+            ))
+          )}
+        </select>
+        {callStatus !== 'idle' && (
+          <p style={{ fontSize: '11px', color: '#475569', marginTop: '4px', margin: '4px 0 0' }}>
+            Patient cannot be changed during an active call.
+          </p>
         )}
       </div>
 
