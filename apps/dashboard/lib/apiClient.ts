@@ -44,6 +44,16 @@ export async function getCallsForPatient(patientId: string): Promise<EnrichedCal
   }
 }
 
+export async function getTranscriptsForPatient(patientId: string): Promise<TranscriptEntry[]> {
+  try {
+    const res = await fetch(`${GATEWAY_URL}/patients/${patientId}/transcripts`);
+    if (!res.ok) return [];
+    return await res.json();
+  } catch {
+    return [];
+  }
+}
+
 export async function getCallById(id: string): Promise<{ call: CallSession; transcripts: TranscriptEntry[] } | null> {
   try {
     const res = await fetch(`${GATEWAY_URL}/calls/${id}`);

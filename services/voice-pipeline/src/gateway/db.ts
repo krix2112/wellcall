@@ -234,6 +234,7 @@ export const insertCall = db.insertCall.bind(db);
 export const getCallById = db.getCallById.bind(db);
 export const getCallsByPatientId = db.getCallsByPatientId.bind(db);
 export const insertTranscriptEntry = db.insertTranscriptEntry.bind(db);
+export const getTranscriptsByCallId = db.getTranscriptsByCallId.bind(db);
 export const insertEscalation = db.insertEscalation.bind(db);
 export const acknowledgeEscalation = db.acknowledgeEscalation.bind(db);
 export const getAllAudit = db.getAllAudit.bind(db);

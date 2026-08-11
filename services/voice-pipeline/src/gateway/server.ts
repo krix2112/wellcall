@@ -1,5 +1,5 @@
 import Fastify, { FastifyInstance } from 'fastify';
-import { getPatients, getPatientById, getCallById, getAllAudit, getCallsByPatientId, acknowledgeEscalation } from './db';
+import { getPatients, getPatientById, getCallById, getAllAudit, getCallsByPatientId, getTranscriptsByCallId, acknowledgeEscalation } from './db';
 import { GatewaySocketManager } from './socket';
 import { runDemoSequence } from '../index';
 
@@ -76,13 +76,25 @@ export function createGatewayServer(): GatewayServerBundle {
     return reply.send(enrichedCalls);
   });
 
+  server.get('/patients/:id/transcripts', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const calls = await getCallsByPatientId(id);
+    if (!calls || calls.length === 0) {
+      return reply.send([]);
+    }
+    const mostRecentCall = calls.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())[0];
+    const transcripts = await getTranscriptsByCallId(mostRecentCall.id);
+    return reply.send(transcripts);
+  });
+
   server.get('/calls/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
     const callData = await getCallById(id);
     if (!callData) {
       return reply.status(404).send({ error: 'Call not found' });
     }
-    return reply.send(callData);
+    const transcripts = await getTranscriptsByCallId(id);
+    return reply.send({ call: callData, transcripts });
   });
 
   server.get('/audit', async (req, reply) => {

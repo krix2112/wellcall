@@ -2,16 +2,35 @@
 
 import React, { useEffect, useState } from 'react';
 import { TranscriptEntry } from '@wellcall/shared-types';
-import { onTranscriptNew } from '../lib/apiClient';
+import { onTranscriptNew, getTranscriptsForPatient } from '../lib/apiClient';
 
-export default function LiveTranscript() {
+interface LiveTranscriptProps {
+  patientId?: string;
+}
+
+export default function LiveTranscript({ patientId }: LiveTranscriptProps) {
   const [transcripts, setTranscripts] = useState<TranscriptEntry[]>([]);
 
   useEffect(() => {
-    // Subscribe to transcript:new socket event
+    if (patientId) {
+      getTranscriptsForPatient(patientId).then((initial) => {
+        if (initial && initial.length > 0) {
+          setTranscripts(initial);
+        }
+      });
+    }
+  }, [patientId]);
+
+  useEffect(() => {
+    // Subscribe to transcript:new socket event with deduplication by id
     const unsubscribe = onTranscriptNew((entry: TranscriptEntry) => {
       console.log('[LiveTranscript] Received transcript:new event:', entry);
-      setTranscripts((prev) => [...prev, entry]);
+      setTranscripts((prev) => {
+        if (prev.some((t) => t.id === entry.id)) {
+          return prev;
+        }
+        return [...prev, entry];
+      });
     });
 
     return () => {

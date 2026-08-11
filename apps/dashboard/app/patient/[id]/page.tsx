@@ -66,7 +66,7 @@ export default function PatientPage({ params }: { params: { id: string } }) {
               <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
                 🎙️ Live Call Communication
               </h3>
-              <LiveTranscript />
+              <LiveTranscript patientId={patientId} />
             </div>
 
             <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow space-y-3">
