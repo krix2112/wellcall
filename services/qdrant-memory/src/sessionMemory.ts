@@ -19,7 +19,8 @@ export async function setMemory(
   patientId: string,
   callId: string,
   summaryText: string,
-  category: MemoryEntry['category']
+  category: MemoryEntry['category'],
+  wasEscalated?: boolean
 ): Promise<MemoryEntry> {
   await ensureSessionMemoryCollection();
 
@@ -33,6 +34,7 @@ export async function setMemory(
     callId,
     summaryText,
     category,
+    wasEscalated: !!wasEscalated,
     createdAt,
     deleted: false,
   };

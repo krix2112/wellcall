@@ -6,6 +6,7 @@ import {
   CallSession,
   ExtractedFields,
   RiskDecision,
+  MemoryEntry,
   ServerToClientEvents,
   ClientToServerEvents,
 } from '@wellcall/shared-types';
@@ -14,7 +15,53 @@ import { RimeClient } from '../rimeClient';
 import { generateWellCallResponse } from '@wellcall/extraction';
 import { getPatientById, insertCall, getCallById, insertTranscriptEntry } from './db';
 import { getDeepgramClient } from '../sttClient';
-import { setMemory } from '@wellcall/qdrant-memory';
+import { setMemory, getMemory } from '@wellcall/qdrant-memory';
+
+/**
+ * Builds a context-aware persona greeting for Sara, fetching cross-call memory if available.
+ */
+async function buildGreetingText(patientId: string, patientName?: string, isHindi: boolean = false): Promise<string> {
+  const name = patientName?.split(' ')[0] || 'there';
+  let memories: MemoryEntry[] = [];
+  try {
+    memories = await getMemory(patientId, 1);
+  } catch (err) {
+    console.warn(`[gateway/socket] [MEMORY] Failed to fetch memory for patient ${patientId}:`, err);
+  }
+
+  const memory = memories.length > 0 ? memories[0] : null;
+
+  if (!memory) {
+    // First-time patient or no past session memory
+    return isHindi
+      ? `Hello ${name}, main Sara bol rahi hoon — aapke discharge check-in ke liye. Aaj aap kaisa feel kar rahe hain?`
+      : `Hello ${name}! My name is Sara, your post-discharge care assistant. Which language are you comfortable speaking in — English or Hindi? Aap kis bhasha mein baat karna pasand karenge?`;
+  }
+
+  // Returning patient with past session memory
+  if (isHindi) {
+    if (memory.wasEscalated) {
+      return `Welcome back ${name}! Pichhli call mein aapke symptoms care team ko report kiye gaye the. Ab aapki tabiyat kaisi hai?`;
+    }
+    if (memory.category === 'symptom') {
+      return `Welcome back ${name}! Pichhli check-in mein aapne kuch symptoms bataye the. Aaj aap kaisa feel kar rahe hain?`;
+    }
+    return `Welcome back ${name}! Dobara connect karke achha laga. Aaj aap kaisa feel kar rahe hain?`;
+  } else {
+    let memoryClause = '';
+    if (memory.wasEscalated) {
+      memoryClause = `During our last call, we flagged your symptoms for the care team. How are you feeling since then?`;
+    } else if (memory.category === 'symptom') {
+      memoryClause = `In our last check-in, you reported some symptoms during your recovery. How are you feeling today?`;
+    } else if (memory.category === 'med_adherence') {
+      memoryClause = `Last time we checked in on your post-discharge medication schedule. How are things going today?`;
+    } else {
+      memoryClause = `Glad to check in with you again! How has your recovery been going since our last call?`;
+    }
+
+    return `Welcome back, ${name}! ${memoryClause} Which language would you prefer — English or Hindi? Aap kis bhasha mein baat karna pasand karenge?`;
+  }
+}
 
 // Allowed dashboard origins for CORS (browser frontend + gateway backend separation).
 const DEFAULT_ALLOWED_ORIGINS = [
@@ -161,8 +208,7 @@ export class GatewaySocketManager {
 
           // Synthesize initial greeting ONLY for fresh new calls (not reconnects)
           if (!isExisting) {
-            const name = patientName?.split(' ')[0] || 'there';
-            const greetingText = `Hello ${name}! My name is Sara, your post-discharge care assistant. Which language are you comfortable speaking in — English or Hindi? Aap kis bhasha mein baat karna pasand karenge?`;
+            const greetingText = await buildGreetingText(patientId, patientName, false);
             socket.emit('voice:response', { callId, text: greetingText });
 
             const rimeApiKey = process.env.RIME_API_KEY;
@@ -234,10 +280,11 @@ export class GatewaySocketManager {
             : last?.medAdherence           ? 'med_adherence'
             : 'general';
 
-          setMemory(session.patientId, callId, summaryText, category).catch((err) => {
+          const wasEscalated = session.lastDecision.action === 'escalate';
+          setMemory(session.patientId, callId, summaryText, category, wasEscalated).catch((err) => {
             console.warn('[gateway/socket] [MEMORY] Failed to write call memory:', err);
           });
-          console.log(`[gateway/socket] [MEMORY] Wrote call memory for ${session.patientId}: "${summaryText}" [${category}]`);
+          console.log(`[gateway/socket] [MEMORY] Wrote call memory for ${session.patientId}: "${summaryText}" [${category}] (wasEscalated: ${wasEscalated})`);
         } else {
           console.log(`[gateway/socket] [MEMORY] Skipping memory write — no utterances processed for ${callId}`);
         }
@@ -250,8 +297,7 @@ export class GatewaySocketManager {
         socket.emit('call:status', { callId, status: 'ringing' });
 
         const patient = await getPatientById(patientId);
-        const name = patient?.name?.split(' ')[0] || 'there';
-        const greetingText = `Hello ${name}, main Sara bol rahi hoon — aapke discharge check-in ke liye. Aaj aap kaisa feel kar rahe hain?`;
+        const greetingText = await buildGreetingText(patientId, patient?.name, true);
 
         // Emit text response to browser UI
         socket.emit('voice:response', { callId, text: greetingText });

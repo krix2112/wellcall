@@ -73,6 +73,7 @@ export interface MemoryEntry {
   callId: string;
   summaryText: string;
   category: 'symptom' | 'mood' | 'med_adherence' | 'general';
+  wasEscalated?: boolean;
   createdAt: string;
   correctedAt?: string;
   deleted?: boolean;
