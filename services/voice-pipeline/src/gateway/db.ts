@@ -61,41 +61,61 @@ export class GatewayDatabase {
    * Idempotent: uses upsert logic so restarting the gateway won't create duplicates.
    */
   public seedFakePatientIfEmpty(): void {
-    // Upsert the seed patient (idempotent — won't duplicate on restart)
-    const seedPatient: Patient = {
-      id: 'patient-01',
-      name: 'Jane Smith (Seeded Demo)',
-      condition: 'Post-Coronary Artery Bypass Graft (CABG)',
-      medications: [
-        { name: 'Aspirin', dosage: '81mg', frequency: 'Once daily', purpose: 'Antiplatelet' },
-        { name: 'Atorvastatin', dosage: '40mg', frequency: 'At bedtime', purpose: 'Lipid control' },
-      ],
-      followUpDate: '2026-08-15',
-      redFlagSymptoms: [
-        'Sudden chest tightness or heavy sternal pressure',
-        'Shortness of breath while resting',
-        'Rapid weight gain over 3 lbs in 24 hours',
-      ],
-    };
-    this.data.patients[seedPatient.id] = seedPatient;
-    console.log('[gateway/db] Ensured seed patient exists: patient-01');
+    // Primary __dirname resolution with process.cwd() fallback
+    const candidatePaths = [
+      path.resolve(__dirname, '../../../../data/synthetic-patients'),
+      path.resolve(__dirname, '../../../data/synthetic-patients'),
+      path.resolve(process.cwd(), 'data/synthetic-patients'),
+      path.resolve(process.cwd(), '../../data/synthetic-patients'),
+    ];
 
-    // Load synthetic patient seed files (patient-01 through patient-04)
-    try {
-      const synthDir = path.resolve(process.cwd(), 'data/synthetic-patients');
-      if (fs.existsSync(synthDir)) {
+    let synthDir: string | null = null;
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        synthDir = p;
+        break;
+      }
+    }
+
+    let loadedCount = 0;
+    if (synthDir) {
+      try {
         const files = fs.readdirSync(synthDir).filter((f) => f.endsWith('.json'));
         for (const file of files) {
           const raw = fs.readFileSync(path.join(synthDir, file), 'utf-8');
           const p = JSON.parse(raw) as Patient;
           if (p && p.id && p.name) {
             this.data.patients[p.id] = p;
+            loadedCount++;
           }
         }
-        console.log(`[gateway/db] Seeded ${files.length} synthetic patients into database.`);
+        console.log(`[gateway/db] Loaded ${loadedCount} synthetic patients from ${synthDir}`);
+      } catch (err) {
+        console.warn(`[gateway/db] Failed loading synthetic patients from ${synthDir}:`, err);
       }
-    } catch (err) {
-      console.warn('[gateway/db] Failed loading synthetic patients:', err);
+    } else {
+      console.warn('[gateway/db] Could not locate data/synthetic-patients directory in any candidate path.');
+    }
+
+    // Only insert fallback seed patient if no patient-01 exists yet
+    if (!this.data.patients['patient-01']) {
+      const seedPatient: Patient = {
+        id: 'patient-01',
+        name: 'Jane Smith (Seeded Demo)',
+        condition: 'Post-Coronary Artery Bypass Graft (CABG)',
+        medications: [
+          { name: 'Aspirin', dosage: '81mg', frequency: 'Once daily', purpose: 'Antiplatelet' },
+          { name: 'Atorvastatin', dosage: '40mg', frequency: 'At bedtime', purpose: 'Lipid control' },
+        ],
+        followUpDate: '2026-08-15',
+        redFlagSymptoms: [
+          'Sudden chest tightness or heavy sternal pressure',
+          'Shortness of breath while resting',
+          'Rapid weight gain over 3 lbs in 24 hours',
+        ],
+      };
+      this.data.patients[seedPatient.id] = seedPatient;
+      console.log('[gateway/db] Ensured fallback seed patient exists: patient-01');
     }
 
     // Upsert demo calls (idempotent — won't duplicate on restart)
