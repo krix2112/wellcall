@@ -158,6 +158,12 @@ export class GatewaySocketManager {
         }
       });
 
+      // --- Voice Streaming: Barge-in Audio Interruption ---
+      socket.on('voice:interrupt', ({ callId }: { callId: string }) => {
+        console.log(`[gateway/socket] [BARGE-IN] Interruption received for callId: ${callId}`);
+        socket.emit('voice:audio_cancel', { callId });
+      });
+
       // --- Voice Streaming: Forward audio chunk to Deepgram ---
       socket.on('voice:chunk', ({ callId, audio }: { callId: string; patientId: string; audio: ArrayBuffer }) => {
         const session = this.activeSessions.get(callId);

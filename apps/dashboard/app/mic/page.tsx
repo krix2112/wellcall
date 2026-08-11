@@ -35,16 +35,19 @@ export default function MicInputPage() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const audioQueueRef = useRef<AudioBuffer[]>([]);
+  const activeSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const isPlayingRef = useRef(false);
   const callIdRef = useRef<string>('');
   const patientIdRef = useRef<string>(PATIENT_ID);
   const hasConnectedOnceRef = useRef<boolean>(false);
 
-  // Check if gateway is reachable
-  useEffect(() => {
-    fetch(`${GATEWAY_URL}/patients/patient-01`, { signal: AbortSignal.timeout(5000) })
-      .then((r) => r.ok ? setDeepgramReady(true) : setDeepgramReady(false))
-      .catch(() => setDeepgramReady(false));
+  const stopAudioPlayback = useCallback(() => {
+    if (activeSourceRef.current) {
+      try { activeSourceRef.current.stop(); } catch { /* ignore */ }
+      activeSourceRef.current = null;
+    }
+    audioQueueRef.current = [];
+    isPlayingRef.current = false;
   }, []);
 
   const playAudioFromBuffer = useCallback((arrayBuffer: ArrayBuffer) => {
@@ -59,11 +62,13 @@ export default function MicInputPage() {
       const playNext = () => {
         if (audioQueueRef.current.length === 0) {
           isPlayingRef.current = false;
+          activeSourceRef.current = null;
           return;
         }
         isPlayingRef.current = true;
         const buf = audioQueueRef.current.shift()!;
         const source = ctx.createBufferSource();
+        activeSourceRef.current = source;
         source.buffer = buf;
         source.connect(ctx.destination);
         source.onended = playNext;
@@ -177,8 +182,22 @@ export default function MicInputPage() {
         setCallStatus('listening');
       });
 
+      // Listen for barge-in audio cancellation from server
+      socket.on('voice:audio_cancel', () => {
+        console.log('[mic] [BARGE-IN] Audio cancellation received from gateway');
+        stopAudioPlayback();
+        setCallStatus('listening');
+      });
+
       // Listen for interim/final transcripts from Deepgram
       socket.on('voice:transcript', ({ callId: cid, text, isFinal }) => {
+        // If user speaks while AI is playing, trigger barge-in interruption!
+        if (isPlayingRef.current) {
+          console.log('[mic] [BARGE-IN] User started speaking during AI playback! Stopping audio.');
+          stopAudioPlayback();
+          socket.emit('voice:interrupt', { callId: callIdRef.current });
+        }
+
         setTranscript((prev) => {
           if (isFinal) {
             return [

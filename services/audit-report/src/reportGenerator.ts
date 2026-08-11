@@ -29,6 +29,26 @@ export interface GenerateAuditRecordInput {
   redFlagMatches: RedFlagMatch[];
   finalDecision: RiskDecision;
   escalation?: Escalation;
+  summary?: string;
+}
+
+export function generateCallSummaryFromExtracted(
+  patientName: string,
+  extractedFields: ExtractedFields[],
+  decision: RiskDecision
+): string {
+  const symptoms = extractedFields
+    .map((f) => f.symptom)
+    .filter(Boolean)
+    .join(', ');
+
+  if (decision.action === 'escalate') {
+    return `${patientName} reported post-discharge symptoms (${symptoms || 'clinical concern'}) — ESCALATED: ${decision.reason}.`;
+  }
+  if (symptoms) {
+    return `${patientName} reported ${symptoms} during post-discharge check-in. Routine follow-up logged.`;
+  }
+  return `Routine post-discharge voice check-in completed for ${patientName}. Patient reported feeling stable with no severe red flags.`;
 }
 
 export function generateAuditRecord(
@@ -42,6 +62,7 @@ export function generateAuditRecord(
     redFlagMatches,
     finalDecision,
     escalation,
+    summary,
   } = input;
 
   // Derive call timestamp from the earliest transcript entry, or now.
@@ -52,12 +73,18 @@ export function generateAuditRecord(
         ).timestamp
       : new Date().toISOString();
 
+  const autoSummary =
+    summary ||
+    escalation?.summary ||
+    generateCallSummaryFromExtracted(patient.name, extractedFields, finalDecision);
+
   const record: AuditRecord = {
     callId,
     patientId: patient.id,
     patientName: patient.name,
     patientCondition: patient.condition,
     callTimestamp,
+    summary: autoSummary,
     transcript,
     extractedFields,
     redFlagMatches,
@@ -66,7 +93,10 @@ export function generateAuditRecord(
 
   // Only attach escalation if it was actually triggered.
   if (escalation !== undefined) {
-    record.escalation = escalation;
+    record.escalation = {
+      ...escalation,
+      summary: autoSummary,
+    };
   }
 
   return record;

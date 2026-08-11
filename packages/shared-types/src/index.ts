@@ -62,6 +62,7 @@ export interface Escalation {
   callId: string;
   patientId: string;
   reason: string;
+  summary?: string;
   timestamp: string;
   acknowledged: boolean;
 }
@@ -83,6 +84,7 @@ export interface AuditRecord {
   patientName: string;
   patientCondition: string;
   callTimestamp: string;
+  summary?: string;
   transcript: TranscriptEntry[];
   extractedFields: ExtractedFields[];
   redFlagMatches: RedFlagMatch[];

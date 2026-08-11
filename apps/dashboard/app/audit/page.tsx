@@ -224,6 +224,12 @@ export default function AuditPage() {
                 <span className="font-mono text-slate-300">{selectedRecord.callId}</span>
               </div>
               <div>
+                <span className="text-slate-400 block mb-1 uppercase font-semibold">AI Call Summary</span>
+                <p className="bg-slate-950 border border-slate-800 p-3 rounded-lg text-cyan-200 leading-relaxed font-medium">
+                  {(selectedRecord as any).summary || selectedRecord.reason}
+                </p>
+              </div>
+              <div>
                 <span className="text-slate-400 block mb-1 uppercase font-semibold">Clinical Rationale</span>
                 <p className="bg-slate-950 border border-slate-800 p-3 rounded-lg text-rose-300 leading-relaxed font-medium">
                   {selectedRecord.reason}
