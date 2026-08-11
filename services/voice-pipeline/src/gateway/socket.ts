@@ -10,7 +10,7 @@ import {
 import { processTranscriptChunk } from '../index';
 import { RimeClient } from '../rimeClient';
 import { generateWellCallResponse } from '@wellcall/extraction';
-import { getPatientById, insertCall, getCallById } from './db';
+import { getPatientById, insertCall, getCallById, insertTranscriptEntry } from './db';
 import { getDeepgramClient } from '../sttClient';
 
 // Allowed dashboard origins for CORS (browser frontend + gateway backend separation).
@@ -258,6 +258,17 @@ export class GatewaySocketManager {
       const session = this.activeSessions.get(callId);
       const languagePref = session?.languagePreference || 'auto';
 
+      // Broadcast final patient speech entry to global dashboard streams
+      const patientEntry: TranscriptEntry = {
+        id: `tx-pt-${Date.now()}`,
+        callId,
+        speaker: 'patient',
+        text,
+        timestamp: new Date().toISOString(),
+      };
+      await insertTranscriptEntry(patientEntry);
+      this.emitTranscriptNew(patientEntry);
+
       // 1. Run intelligence pipeline (Groq -> Qdrant -> Risk Engine -> DB)
       const { extracted, redFlagMatch, decision } = await processTranscriptChunk(callId, patientId, text);
 
@@ -279,6 +290,17 @@ export class GatewaySocketManager {
 
       console.log(`[gateway/socket] [AI RESPONSE] "${responseText}"`);
       socket.emit('voice:response', { callId, text: responseText });
+
+      // Broadcast system AI response entry to global dashboard streams
+      const systemEntry: TranscriptEntry = {
+        id: `tx-sys-${Date.now()}`,
+        callId,
+        speaker: 'system',
+        text: responseText,
+        timestamp: new Date().toISOString(),
+      };
+      await insertTranscriptEntry(systemEntry);
+      this.emitTranscriptNew(systemEntry);
 
       // 3. Synthesize voice audio via Rime TTS
       const rimeApiKey = process.env.RIME_API_KEY;
