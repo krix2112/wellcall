@@ -28,7 +28,7 @@ export const ROUTINE_SCENARIO: DemoScenario = {
   sequence: [
     {
       speaker: 'system',
-      text: 'Hello Jane, this is WellCall checking in on your post-discharge recovery. How are you feeling today?',
+      text: 'Hello Jane, this is Sara, your care assistant, checking in on your post-discharge recovery. How are you feeling today?',
       delayMs: 500,
     },
     {
@@ -65,7 +65,7 @@ export const ESCALATION_SCENARIO: DemoScenario = {
   sequence: [
     {
       speaker: 'system',
-      text: 'Hello John, this is WellCall checking in after your heart surgery. How are you doing today?',
+      text: 'Hello John, this is Sara, your care assistant, checking in after your heart surgery. How are you doing today?',
       delayMs: 500,
     },
     {

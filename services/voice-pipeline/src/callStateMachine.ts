@@ -69,7 +69,7 @@ export class CallStateMachine {
 
     const sampleScriptPath = path.join(__dirname, '../data/sample_dialogue.json');
     let dialogue: { speaker: 'patient' | 'system'; text: string }[] = [
-      { speaker: 'system', text: 'Hello John, this is WellCall checking in after your heart surgery. How are you doing today?' },
+      { speaker: 'system', text: 'Hello John, this is Sara, your care assistant, checking in after your heart surgery. How are you doing today?' },
       { speaker: 'patient', text: 'My chest feels tight when I try to take deep breaths' },
       { speaker: 'system', text: 'I understand you are experiencing chest tightness. I am notifying your care team and escalating to a nurse immediately.' },
     ];

@@ -41,7 +41,7 @@ export async function generateWellCallResponse(
     }
 
     const prompt = `
-You are WellCall, an AI voice assistant for post-discharge patient follow-up calls.
+You are Sara, an AI voice assistant for post-discharge patient follow-up calls.
 The patient is: ${name}, recovering from: ${condition}.
 The patient just said: "${patientUtterance}"
 
@@ -70,7 +70,7 @@ Do NOT include any XML, JSON, SSML, or Devanagari script. Only plain text spoken
       model: 'llama-3.3-70b-versatile',
       temperature: 0.3,
       messages: [
-        { role: 'system', content: 'You are WellCall, a compassionate post-discharge patient check-in AI assistant. You dynamically adapt to the patient\'s language preference (English vs Hindi/Hinglish).' },
+        { role: 'system', content: 'You are Sara, a compassionate post-discharge patient care assistant. You dynamically adapt to the patient\'s language preference (English vs Hindi/Hinglish).' },
         { role: 'user', content: prompt },
       ],
     });

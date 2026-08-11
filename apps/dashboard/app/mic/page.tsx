@@ -300,10 +300,10 @@ export default function MicInputPage() {
 
   const getStatusText = () => {
     switch (callStatus) {
-      case 'ringing': return 'Connecting to WellCall...';
+      case 'ringing': return 'Connecting to Sara...';
       case 'listening': return 'Listening...';
-      case 'processing': return 'WellCall is analyzing your response...';
-      case 'speaking': return '🔊 WellCall is speaking...';
+      case 'processing': return 'Sara is analyzing your response...';
+      case 'speaking': return '🔊 Sara is speaking...';
       case 'ended': return 'Check-in complete';
       case 'error': return 'Connection error';
       default: return 'Ready to start check-in';
@@ -317,7 +317,7 @@ export default function MicInputPage() {
       {/* Header */}
       <div style={{ marginBottom: '32px' }}>
         <h2 style={{ margin: '0 0 8px', fontSize: '28px', fontWeight: 800, color: '#f8fafc' }}>
-          WellCall Post-Discharge Check-in
+          Sara — Your Post-Discharge Check-in
         </h2>
         <p style={{ margin: 0, color: '#94a3b8', fontSize: '14px' }}>
           {deepgramReady === false
@@ -483,7 +483,7 @@ export default function MicInputPage() {
               : callStatus === 'processing'
               ? '🧠 Analyzing your response...'
               : callStatus === 'speaking'
-              ? '🔊 Playing WellCall response...'
+              ? '🔊 Sara is responding...'
               : 'Click Start Check-in to begin your post-discharge voice check-in.'}
           </div>
         ) : (
@@ -516,7 +516,7 @@ export default function MicInputPage() {
                     textTransform: 'uppercase',
                     letterSpacing: '0.5px',
                   }}>
-                    {line.speaker === 'patient' ? 'You' : 'WellCall'}
+                    {line.speaker === 'patient' ? 'You' : 'Sara'}
                   </div>
                   <div style={{
                     fontSize: '15px',

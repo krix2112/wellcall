@@ -189,7 +189,7 @@ const DEMO_SCENARIOS: Record<string, { patientId: string; sequence: { speaker: '
   escalation: {
     patientId: 'patient-01',
     sequence: [
-      { speaker: 'system', text: 'Hello John, this is WellCall checking in after your heart surgery. How are you doing today?', delayMs: 500 },
+      { speaker: 'system', text: 'Hello John, this is Sara, your care assistant, checking in after your heart surgery. How are you doing today?', delayMs: 500 },
       { speaker: 'patient', text: 'My chest feels tight when I try to take deep breaths', delayMs: 1500 },
       { speaker: 'system', text: 'I understand you are experiencing chest tightness. I am notifying your care team and escalating to a nurse immediately.', delayMs: 1000 },
     ],
@@ -197,7 +197,7 @@ const DEMO_SCENARIOS: Record<string, { patientId: string; sequence: { speaker: '
   routine: {
     patientId: 'patient-01',
     sequence: [
-      { speaker: 'system', text: 'Hello John, this is WellCall checking in after your heart surgery. How are you doing today?', delayMs: 500 },
+      { speaker: 'system', text: 'Hello John, this is Sara, your care assistant, checking in after your heart surgery. How are you doing today?', delayMs: 500 },
       { speaker: 'patient', text: 'I feel fine, just resting at home', delayMs: 1500 },
       { speaker: 'system', text: 'Great to hear! Have you been taking your prescribed blood thinners as instructed?', delayMs: 1000 },
       { speaker: 'patient', text: 'Yes, I took them this morning with breakfast.', delayMs: 1500 },
@@ -207,7 +207,7 @@ const DEMO_SCENARIOS: Record<string, { patientId: string; sequence: { speaker: '
   correction: {
     patientId: 'patient-01',
     sequence: [
-      { speaker: 'system', text: 'Hello Jane, this is WellCall checking in after your discharge. How are you feeling today?', delayMs: 500 },
+      { speaker: 'system', text: 'Hello Jane, this is Sara, your care assistant, checking in after your discharge. How are you feeling today?', delayMs: 500 },
       { speaker: 'patient', text: "I'm having really sharp chest pain and it's hard to breathe", delayMs: 1500 },
       { speaker: 'system', text: 'I understand you are experiencing chest pain. Can you tell me more about where the pain is located?', delayMs: 1000 },
       { speaker: 'patient', text: 'Oh sorry, I misspoke! I meant my shoulder is sore from sleeping wrong, my chest is totally fine.', delayMs: 1500 },
