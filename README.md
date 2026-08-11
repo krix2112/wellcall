@@ -174,8 +174,9 @@ flowchart LR
 - Emits `escalation:new` to dashboard clients, displaying pulsing `RiskFlagBanner` alerts.
 - Clicking "Acknowledge" syncs status across the banner, database, and `/audit` inspection drawer via `escalation:acknowledged` Socket.io events.
 
-### 10. 📲 Live Twilio Nurse SMS Alerts
-- Automatically dispatches SMS alerts containing patient details, flagged symptom, and call ID directly to the on-call nurse's mobile phone via Twilio SMS API.
+### 10. 📲 Twilio Nurse Alert Integration
+- Fully wired Twilio SMS API client (`notifyNurseSMS.ts`) that dispatches structured nurse escalation alerts containing patient details, flagged symptom, call ID, and timestamp.
+- **Fault-Tolerant Execution:** All Twilio requests are wrapped in non-blocking error handlers. If trial account regulations apply (e.g. Twilio Code `572006` enforcing registered templates for international numbers), dispatch errors are caught cleanly without affecting the live Socket.io dashboard alerts or call flow.
 
 ### 11. 📋 Auditable Compliance Ledger
 - Assembles full audit records capturing verbatim transcripts, extraction output, Qdrant similarity scores, risk rationales, and nurse acknowledgment status — exportable as JSON or formatted text reports.
@@ -258,6 +259,7 @@ curl -X POST "http://localhost:3001/demo/run?scenario=escalation&patientId=patie
 
 ## ⚠️ Known Limitations & Operational Constraints
 
+- **Twilio SMS Trial Account Regulations:** On Twilio trial accounts, SMS delivery to international (+91) numbers returns Twilio Error `572006` (`Trial accounts require pre-approved SMS templates`). The gateway handles this gracefully via non-blocking `try/catch` logic so the live dashboard escalation is never interrupted.
 - **Browser Audio Autoplay:** Web browsers require an explicit user gesture (e.g. clicking "Start Call" on `/mic`) before allowing Web Audio API playback of incoming WebSocket audio buffers.
 - **Render Cold-Start Delay:** On Render's free hosting tier, backend instances spin down during periods of inactivity. Initial requests may take **20–30 seconds** to wake up.
 - **Single Active Call Concurrency:** The current gateway process instance manages one active voice stream at a time. Session isolation for concurrent multi-call scaling is supported architecturally but unscaled in this build.

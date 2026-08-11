@@ -33,13 +33,9 @@ export async function notifyNurseSMS(
   const patientPhoneStr = patient.phone ? ` (Phone: ${patient.phone})` : '';
   const messageBody = `🚨 URGENT NURSE ALERT: High-risk escalation for patient "${patient.name}"${patientPhoneStr}.\n\nReason: ${escalation.reason}\nCall ID: ${escalation.callId}\nTimestamp: ${new Date(escalation.timestamp).toLocaleString()}`;
 
-  // If TWILIO_WHATSAPP_FROM is explicitly set, format with whatsapp: prefix; otherwise send standard SMS
-  const useWhatsApp = Boolean(whatsappFrom && whatsappFrom !== 'your_twilio_whatsapp_from_here');
-  const from = useWhatsApp
-    ? whatsappFrom!.startsWith('whatsapp:')
-      ? whatsappFrom!
-      : `whatsapp:${whatsappFrom}`
-    : twilioPhone!;
+  // Use WhatsApp mode ONLY if whatsappFrom explicitly includes 'whatsapp:' prefix; otherwise send standard SMS
+  const useWhatsApp = Boolean(whatsappFrom && whatsappFrom.startsWith('whatsapp:'));
+  const from = useWhatsApp ? whatsappFrom! : (twilioPhone || whatsappFrom!);
   const to = useWhatsApp ? (nurseTo.startsWith('whatsapp:') ? nurseTo : `whatsapp:${nurseTo}`) : nurseTo;
 
   try {
