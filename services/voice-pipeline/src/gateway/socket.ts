@@ -134,7 +134,7 @@ export class GatewaySocketManager {
           // Synthesize initial greeting ONLY for fresh new calls (not reconnects)
           if (!isExisting) {
             const name = patientName?.split(' ')[0] || 'there';
-            const greetingText = `Hello ${name}, this is WellCall checking in after your discharge. How are you feeling today?`;
+            const greetingText = `Hello ${name}, main WellCall se bol raha hoon aapke discharge check-in ke liye. Aaj aap kaisa feel kar rahe hain?`;
             socket.emit('voice:response', { callId, text: greetingText });
 
             const rimeApiKey = process.env.RIME_API_KEY;
@@ -194,7 +194,7 @@ export class GatewaySocketManager {
 
         const patient = await getPatientById(patientId);
         const name = patient?.name?.split(' ')[0] || 'there';
-        const greetingText = `Hello ${name}, this is WellCall checking in after your discharge. How are you feeling today?`;
+        const greetingText = `Hello ${name}, main WellCall se bol raha hoon aapke discharge check-in ke liye. Aaj aap kaisa feel kar rahe hain?`;
 
         // Emit text response to browser UI
         socket.emit('voice:response', { callId, text: greetingText });

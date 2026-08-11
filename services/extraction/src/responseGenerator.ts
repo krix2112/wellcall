@@ -31,7 +31,7 @@ export async function generateWellCallResponse(
     const condition = patientContext.condition || 'your recovery';
 
     const prompt = `
-You are WellCall, an AI voice assistant for post-discharge patient follow-up calls.
+You are WellCall, an AI voice assistant for post-discharge patient follow-up calls in India/global.
 The patient is: ${name}, recovering from: ${condition}.
 The patient just said: "${patientUtterance}"
 
@@ -48,18 +48,19 @@ Red flag analysis:
 Risk decision: ${decision.action.toUpperCase()}
 - Reason: ${decision.reason}
 
-Generate a single, natural spoken response for WellCall to say to the patient.
+CRITICAL INSTRUCTION:
+Generate a single, natural spoken response in natural **Hinglish** (a warm blend of Hindi and English written in Latin alphabet, e.g. "Aap kaisa feel kar rahe hain?").
 ${decision.action === 'escalate'
-      ? `CRITICAL: Acknowledge the symptom, tell the patient you are escalating to a nurse immediately. Be empathetic but direct.`
-      : `Acknowledge what the patient shared. If they reported no symptoms, encourage them. If they reported mild symptoms, ask a follow-up question. If they mentioned medication adherence, respond appropriately. Keep it conversational and brief (1-2 sentences max).`
+      ? `CRITICAL: Acknowledge the symptom in Hinglish, tell the patient you are escalating to a nurse immediately (e.g. "Main abhi nurse ko alert kar raha hoon."). Be empathetic but direct.`
+      : `Acknowledge what the patient shared in warm Hinglish. If they reported no symptoms, encourage them. If they reported mild symptoms, ask a brief follow-up. Keep it conversational and brief (1-2 short sentences max).`
     }
-Do NOT include any XML, JSON, SSML, or markup. Just plain text spoken words.`;
+Do NOT include any XML, JSON, SSML, or Hindi script. Only plain text Hinglish in Latin script.`;
 
     const response = await openai.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
-      temperature: 0.3,
+      temperature: 0.4,
       messages: [
-        { role: 'system', content: 'You are WellCall, a post-discharge patient check-in AI assistant. You speak naturally and compassionately.' },
+        { role: 'system', content: 'You are WellCall, a compassionate post-discharge patient check-in AI assistant. You ALWAYS speak in natural, empathetic Hinglish (Romanized Hindi + English blend).' },
         { role: 'user', content: prompt },
       ],
     });
@@ -77,7 +78,7 @@ Do NOT include any XML, JSON, SSML, or markup. Just plain text spoken words.`;
 
 /**
  * Fallback response when Groq is unavailable.
- * Generates a deterministic, context-aware response based on extracted fields.
+ * Generates a deterministic, context-aware Hinglish response based on extracted fields.
  */
 function fallbackResponse(
   patientUtterance: string,
@@ -90,28 +91,20 @@ function fallbackResponse(
 
   if (decision.action === 'escalate') {
     if (extracted.symptom) {
-      return `I understand you're experiencing ${extracted.symptom}. I'm notifying your care team and escalating to a nurse immediately.`;
+      return `Mujhe samajh aa raha hai ki aapko ${extracted.symptom} ho raha hai. Main abhi doctor aur nurse ko notify kar raha hoon.`;
     }
-    return `I'm going to connect you with a nurse right away about what you've described.`;
+    return `Main abhi aapki baat nurse se connect karwa raha hoon. Kripya hold kijiye.`;
   }
 
   const text = patientUtterance.toLowerCase();
 
-  if (text.includes('fine') || text.includes('good') || text.includes('better') || text.includes('alright')) {
-    return `That's great to hear, ${name}! Keep up the good work with your recovery. Have a wonderful day.`;
+  if (text.includes('fine') || text.includes('good') || text.includes('better') || text.includes('alright') || text.includes('theek')) {
+    return `Yeh sunkar achha laga! Kya aapne aaj ki saari medicines time par li hain?`;
   }
 
   if (extracted.symptom) {
-    return `I've noted your ${extracted.symptom}. I'm logging this for your care team. Is there anything else you'd like to share about how you're feeling?`;
+    return `Main aapke ${extracted.symptom} ki details record kar raha hoon. Kya koi aur dikkat bhi lag rahi hai?`;
   }
 
-  if (extracted.medAdherence === 'no') {
-    return `I see you may have missed some medication. It's important to stay on schedule. Would you like me to remind you again later?`;
-  }
-
-  if (extracted.medAdherence === 'yes') {
-    return `Good job staying on your medication. Is there anything else you'd like to discuss?`;
-  }
-
-  return `Thank you for sharing that, ${name}. I've recorded this in your check-in. Take care.`;
+  return `Shukriya batane ke liye. Kripya apna khayal rakhein aur koi dikkat ho toh turant batayein.`;
 }

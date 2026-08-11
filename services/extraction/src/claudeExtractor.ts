@@ -34,12 +34,13 @@ export async function extractFields(
       ? `Patient discharge condition context: "${patientContext.condition}". Use this medical condition to accurately evaluate ambiguous or subtle symptom expressions.`
       : 'No prior condition context provided.';
 
-    const systemPrompt = `You are a clinical extraction parser for post-discharge patient follow-up calls.
-Extract structured fields strictly from what is explicitly stated or clearly implied in the transcript snippet.
+    const systemPrompt = `You are a multilingual clinical extraction parser for post-discharge patient follow-up calls in English and Hinglish (Hindi + English blend).
+Extract structured clinical fields strictly from what is explicitly stated or clearly implied in the transcript snippet (whether spoken in English, Hindi, or Hinglish, e.g. "chest me dard hai" -> symptom: "chest pain", "saans lene me dikkat" -> symptom: "shortness of breath", "dawa nahi li" -> medAdherence: "no").
 Rules:
 1. Do NOT guess or hallucinate symptoms that are not mentioned. Return null if a field is omitted.
 2. ${conditionHint}
-3. Call the function "extract_patient_checkin_fields" with your structured extraction result.`;
+3. Always translate extracted symptom descriptions into standard English terms for vector clinical risk matching.
+4. Call the function "extract_patient_checkin_fields" with your structured extraction result.`;
 
     const response = await openai.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
