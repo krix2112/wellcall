@@ -80,6 +80,24 @@ export class GatewayDatabase {
     this.data.patients[seedPatient.id] = seedPatient;
     console.log('[gateway/db] Ensured seed patient exists: patient-01');
 
+    // Load synthetic patient seed files (patient-01 through patient-04)
+    try {
+      const synthDir = path.resolve(process.cwd(), 'data/synthetic-patients');
+      if (fs.existsSync(synthDir)) {
+        const files = fs.readdirSync(synthDir).filter((f) => f.endsWith('.json'));
+        for (const file of files) {
+          const raw = fs.readFileSync(path.join(synthDir, file), 'utf-8');
+          const p = JSON.parse(raw) as Patient;
+          if (p && p.id && p.name) {
+            this.data.patients[p.id] = p;
+          }
+        }
+        console.log(`[gateway/db] Seeded ${files.length} synthetic patients into database.`);
+      }
+    } catch (err) {
+      console.warn('[gateway/db] Failed loading synthetic patients:', err);
+    }
+
     // Upsert demo calls (idempotent — won't duplicate on restart)
     const demoCall1: CallSession = {
       id: 'call-demo-101',

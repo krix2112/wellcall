@@ -25,6 +25,7 @@ async function buildGreetingText(patientId: string, patientName?: string, isHind
   let memories: MemoryEntry[] = [];
   try {
     memories = await getMemory(patientId, 1);
+    console.log(`[gateway/socket] [MEMORY] buildGreetingText for ${patientId} (${name}) -> found ${memories.length} memories:`, memories);
   } catch (err) {
     console.warn(`[gateway/socket] [MEMORY] Failed to fetch memory for patient ${patientId}:`, err);
   }

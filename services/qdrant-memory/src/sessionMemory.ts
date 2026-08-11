@@ -1,5 +1,5 @@
 import { MemoryEntry } from '@wellcall/shared-types';
-import { ensureCollection, fallbackPointStore, qdrantFetch, StoredVectorPoint } from './qdrantClient';
+import { ensureCollection, fallbackPointStore, qdrantFetch, qdrantClient, StoredVectorPoint } from './qdrantClient';
 import { embedText, VECTOR_SIZE } from './embeddings';
 
 export const SESSION_MEMORY_COLLECTION = 'patient_session_memory';
@@ -9,6 +9,12 @@ export const SESSION_MEMORY_COLLECTION = 'patient_session_memory';
  */
 export async function ensureSessionMemoryCollection(): Promise<void> {
   await ensureCollection(SESSION_MEMORY_COLLECTION, VECTOR_SIZE);
+  try {
+    await qdrantClient.createPayloadIndex(SESSION_MEMORY_COLLECTION, {
+      field_name: 'patientId',
+      field_schema: 'keyword',
+    });
+  } catch { /* ignore if index exists */ }
 }
 
 /**
@@ -84,43 +90,35 @@ export async function getMemory(patientId: string, limit: number = 10): Promise<
   await ensureSessionMemoryCollection();
 
   try {
-    const res = await qdrantFetch(`/collections/${SESSION_MEMORY_COLLECTION}/points/scroll`, {
-      method: 'POST',
-      body: JSON.stringify({
-        filter: {
-          must: [
-            { key: 'patientId', match: { value: patientId } },
-          ],
-          must_not: [
-            { key: 'deleted', match: { value: true } },
-          ],
-        },
-        limit,
-        with_payload: true,
-      }),
+    const res = await qdrantClient.scroll(SESSION_MEMORY_COLLECTION, {
+      filter: {
+        must: [
+          {
+            key: 'patientId',
+            match: { value: patientId },
+          },
+        ],
+      },
+      limit: limit * 2,
+      with_payload: true,
     });
 
-    if (!res.ok) throw new Error(`Qdrant scroll returned HTTP ${res.status}`);
+    const points = res.points || [];
+    const entries = points
+      .map((p) => p.payload as unknown as MemoryEntry)
+      .filter((m) => m && !m.deleted);
 
-    const data = (await res.json()) as {
-      result: {
-        points: Array<{
-          id: string | number;
-          payload: MemoryEntry;
-        }>;
-      };
-    };
-
-    const entries = (data.result?.points || []).map((p) => p.payload);
-    // Sort most recent first
-    return entries.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return entries
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, limit);
   } catch (err) {
     console.warn('[sessionMemory] Using fallback memory retrieval.', err);
     const points = fallbackPointStore.get(SESSION_MEMORY_COLLECTION) || [];
     return points
       .map((p) => p.payload as unknown as MemoryEntry)
-      .filter((m) => m.patientId === patientId && !m.deleted)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      .filter((m) => m && m.patientId === patientId && !m.deleted)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, limit);
   }
 }
 
