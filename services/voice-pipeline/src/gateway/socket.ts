@@ -35,6 +35,7 @@ export class GatewaySocketManager {
     patientName?: string;
     patientCondition?: string;
     callId: string;
+    languagePreference?: 'english' | 'hindi' | 'auto';
   }> = new Map();
 
   constructor(httpServer: HTTPServer) {
@@ -88,7 +89,7 @@ export class GatewaySocketManager {
             channels: 1,
           });
 
-          this.activeSessions.set(callId, { dgConnection: conn, patientId, patientName, patientCondition, callId });
+          this.activeSessions.set(callId, { dgConnection: conn, patientId, patientName, patientCondition, callId, languagePreference: 'auto' });
 
           let hasSentGreeting = false;
 
@@ -107,6 +108,19 @@ export class GatewaySocketManager {
             if (!text) return;
 
             console.log(`[gateway/socket] [DEEPGRAM] transcript (${isFinal ? 'FINAL' : 'INTERIM'}): "${text}"`);
+
+            // Dynamically detect or switch patient language preference
+            const lowerText = text.toLowerCase();
+            const session = this.activeSessions.get(callId);
+            if (session) {
+              if (lowerText.includes('english') || lowerText.includes('angrezi') || lowerText.includes('speak in english') || lowerText.includes('in english')) {
+                session.languagePreference = 'english';
+                console.log(`[gateway/socket] [LANG] Patient set language preference to ENGLISH for call ${callId}`);
+              } else if (lowerText.includes('hindi') || lowerText.includes('hinglish') || lowerText.includes('hindi mein') || lowerText.includes('in hindi')) {
+                session.languagePreference = 'hindi';
+                console.log(`[gateway/socket] [LANG] Patient set language preference to HINDI for call ${callId}`);
+              }
+            }
 
             // Send live transcript back to browser
             socket.emit('voice:transcript', { callId, text, isFinal });
@@ -134,7 +148,7 @@ export class GatewaySocketManager {
           // Synthesize initial greeting ONLY for fresh new calls (not reconnects)
           if (!isExisting) {
             const name = patientName?.split(' ')[0] || 'there';
-            const greetingText = `Hello ${name}, main WellCall se bol raha hoon aapke discharge check-in ke liye. Aaj aap kaisa feel kar rahe hain?`;
+            const greetingText = `Hello ${name}! Welcome to WellCall. Which language are you comfortable speaking in — English or Hindi? Aap kis bhasha mein baat karna pasand karenge?`;
             socket.emit('voice:response', { callId, text: greetingText });
 
             const rimeApiKey = process.env.RIME_API_KEY;
@@ -241,25 +255,26 @@ export class GatewaySocketManager {
     patientCondition?: string
   ): Promise<void> {
     try {
+      const session = this.activeSessions.get(callId);
+      const languagePref = session?.languagePreference || 'auto';
+
       // 1. Run intelligence pipeline (Groq -> Qdrant -> Risk Engine -> DB)
       const { extracted, redFlagMatch, decision } = await processTranscriptChunk(callId, patientId, text);
 
-      // 2. Generate context-aware Conversational AI Response
+      // 2. Generate context-aware Conversational AI Response matching selected language
       let responseText = '';
-      if (decision.action === 'escalate') {
-        responseText = 'I understand you are experiencing symptoms. I am notifying your care team and escalating to a nurse immediately. Please stay calm.';
-      } else {
-        try {
-          responseText = await generateWellCallResponse(
-            text,
-            { name: patientName, condition: patientCondition },
-            extracted,
-            redFlagMatch,
-            decision
-          );
-        } catch {
-          responseText = 'Thank you for providing that update. I have logged this check-in for your care team.';
-        }
+      try {
+        responseText = await generateWellCallResponse(
+          text,
+          { name: patientName, condition: patientCondition, languagePreference: languagePref },
+          extracted,
+          redFlagMatch,
+          decision
+        );
+      } catch {
+        responseText = languagePref === 'english'
+          ? 'Thank you for providing that update. I have logged this check-in for your care team.'
+          : 'Shukriya update dene ke liye. Main yeh information aapki care team ke liye log kar raha hoon.';
       }
 
       console.log(`[gateway/socket] [AI RESPONSE] "${responseText}"`);
