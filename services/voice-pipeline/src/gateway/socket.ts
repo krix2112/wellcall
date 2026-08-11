@@ -4,6 +4,8 @@ import {
   TranscriptEntry,
   Escalation,
   CallSession,
+  ExtractedFields,
+  RiskDecision,
   ServerToClientEvents,
   ClientToServerEvents,
 } from '@wellcall/shared-types';
@@ -12,6 +14,7 @@ import { RimeClient } from '../rimeClient';
 import { generateWellCallResponse } from '@wellcall/extraction';
 import { getPatientById, insertCall, getCallById, insertTranscriptEntry } from './db';
 import { getDeepgramClient } from '../sttClient';
+import { setMemory } from '@wellcall/qdrant-memory';
 
 // Allowed dashboard origins for CORS (browser frontend + gateway backend separation).
 const DEFAULT_ALLOWED_ORIGINS = [
@@ -36,6 +39,8 @@ export class GatewaySocketManager {
     patientCondition?: string;
     callId: string;
     languagePreference?: 'english' | 'hindi' | 'auto';
+    accumulatedExtracted: ExtractedFields[];
+    lastDecision: RiskDecision;
   }> = new Map();
 
   constructor(httpServer: HTTPServer) {
@@ -89,7 +94,16 @@ export class GatewaySocketManager {
             channels: 1,
           });
 
-          this.activeSessions.set(callId, { dgConnection: conn, patientId, patientName, patientCondition, callId, languagePreference: 'auto' });
+          this.activeSessions.set(callId, {
+            dgConnection: conn,
+            patientId,
+            patientName,
+            patientCondition,
+            callId,
+            languagePreference: 'auto',
+            accumulatedExtracted: [],
+            lastDecision: { action: 'log', reason: 'No utterances processed' },
+          });
 
           let hasSentGreeting = false;
 
@@ -198,6 +212,35 @@ export class GatewaySocketManager {
           this.activeSessions.delete(callId);
         }
         this.emitCallStatus(callId, 'ended');
+
+        // Write a cross-call memory entry if any utterances were processed this call.
+        // Skipped entirely if the patient hung up before speaking (accumulatedExtracted empty).
+        if (session && session.accumulatedExtracted.length > 0) {
+          const patientFirstName = session.patientName?.split(' ')[0] || session.patientId;
+          const extracted = session.accumulatedExtracted;
+          const decision = session.lastDecision;
+          // Inline summary: 1-2 sentences from accumulated extraction + final decision
+          const symptoms = extracted.map((f) => f.symptom).filter(Boolean).join(', ');
+          const summaryText = decision.action === 'escalate'
+            ? `${patientFirstName} reported post-discharge symptoms (${symptoms || 'clinical concern'}) — ESCALATED: ${decision.reason}.`
+            : symptoms
+              ? `${patientFirstName} reported ${symptoms} during post-discharge check-in. Routine follow-up logged.`
+              : `Routine post-discharge voice check-in completed for ${patientFirstName}. Patient reported feeling stable.`;
+          const last = extracted[extracted.length - 1];
+          const category: 'symptom' | 'mood' | 'med_adherence' | 'general' =
+            decision.action === 'escalate' ? 'symptom'
+            : last?.symptom                ? 'symptom'
+            : last?.mood                   ? 'mood'
+            : last?.medAdherence           ? 'med_adherence'
+            : 'general';
+
+          setMemory(session.patientId, callId, summaryText, category).catch((err) => {
+            console.warn('[gateway/socket] [MEMORY] Failed to write call memory:', err);
+          });
+          console.log(`[gateway/socket] [MEMORY] Wrote call memory for ${session.patientId}: "${summaryText}" [${category}]`);
+        } else {
+          console.log(`[gateway/socket] [MEMORY] Skipping memory write — no utterances processed for ${callId}`);
+        }
       });
 
       // --- Initiate Call Greeting ---
@@ -271,6 +314,13 @@ export class GatewaySocketManager {
 
       // 1. Run intelligence pipeline (Groq -> Qdrant -> Risk Engine -> DB)
       const { extracted, redFlagMatch, decision } = await processTranscriptChunk(callId, patientId, text);
+
+      // Accumulate per-turn extraction results for end-of-call memory
+      const liveSession = this.activeSessions.get(callId);
+      if (liveSession) {
+        liveSession.accumulatedExtracted.push(extracted);
+        liveSession.lastDecision = decision;
+      }
 
       // 2. Generate context-aware Conversational AI Response matching selected language
       let responseText = '';
