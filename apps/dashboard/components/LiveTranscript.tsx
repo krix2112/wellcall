@@ -20,11 +20,7 @@ export default function LiveTranscript() {
   }, []);
 
   return (
-    <div style={{ padding: '16px', fontFamily: 'sans-serif' }}>
-      <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '12px' }}>
-        Live Call Transcript Stream
-      </h2>
-
+    <div style={{ padding: '8px 0', fontFamily: 'sans-serif' }}>
       {transcripts.length === 0 ? (
         <p style={{ color: '#888', fontStyle: 'italic' }}>
           Waiting for live transcript:new socket events...
